@@ -6,8 +6,13 @@
 class Game {
 	public:
 		Game();
-		bool Initialize(Presentation & p, std::string & error);
+		~Game();
 
+		bool Initialize(Presentation * p, std::string & error);
+		void AddLevel();
+		void End();
+		
 	private:
-		std::vector<Level> levels;
+		Presentation * p;
+		std::vector<Level *> levels;
 };

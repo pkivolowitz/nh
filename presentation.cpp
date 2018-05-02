@@ -10,7 +10,14 @@ Presentation::Presentation() {
 
 Presentation::~Presentation() {
 	if (curses_is_initialized) {
+		End();
+	}
+}
+
+void Presentation::End() {
+	if (curses_is_initialized) {
 		endwin();
+		curses_is_initialized = false;
 	}
 }
 
@@ -35,4 +42,13 @@ bool Presentation::Initialize(string & error) {
 	}
 	return retval;
 }
+
+void Presentation::GetDimensions(int & l, int & c) {
+	l = c = 0;
+	if (curses_is_initialized) {
+		l = lines;
+		c = cols;
+	}
+}
+
 

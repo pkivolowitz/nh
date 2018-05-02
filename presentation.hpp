@@ -5,9 +5,12 @@
 class Presentation {
 	public:
 		Presentation();
-		bool Initialize(std::string & error);
 		~Presentation();
 
+		bool Initialize(std::string & error);
+		void GetDimensions(int & l, int & c);
+		void End();
+				
 	private:
 		bool curses_is_initialized;
 		WINDOW * stdscr;
