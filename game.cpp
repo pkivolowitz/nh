@@ -2,6 +2,7 @@
 #include <fstream>
 #include <string>
 #include <cassert>
+#include <unistd.h>
 
 #include "game.hpp"
 
@@ -36,6 +37,44 @@ bool Game::Initialize(Presentation * pr, string & error) {
 	p = pr;
 	return true;
 }
+
+void Game::EventLoop() {
+	assert(p != nullptr);
+	int c;
+	bool keep_going = true;
+
+	while (keep_going) {
+		c = p->GetKey();
+		switch (c) {
+			case 'q':
+				if (HandleQuit())
+					keep_going = false;
+				break;
+		}
+	}
+}
+
+void Game::Run(string & error) {
+	try {
+		EventLoop();
+	}
+	catch (string e) {
+		error = e;
+	}
+}
+
+bool Game::HandleQuit() {
+	bool retval = false;
+	wmove(stdscr, 0, 0);
+	clrtoeol();
+	p->KeyMode(KeyModes::INTERACTIVE);
+	addstr("Quit? (y|n): ");
+	refresh();
+	sleep(2);
+	p->KeyMode(KeyModes::NONINTERACTIVE);
+	return retval = true;
+}
+
 
 void Game::AddLevel() {
 	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	

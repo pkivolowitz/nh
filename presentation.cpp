@@ -1,10 +1,14 @@
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include "presentation.hpp"
 
 using namespace std;
 
+extern ofstream log;
+
 Presentation::Presentation() {
+	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
 	curses_is_initialized = false;
 }
 
@@ -15,13 +19,16 @@ Presentation::~Presentation() {
 }
 
 void Presentation::End() {
+	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
 	if (curses_is_initialized) {
+		KeyMode(KeyModes::INTERACTIVE);
 		endwin();
 		curses_is_initialized = false;
 	}
 }
 
 bool Presentation::Initialize(string & error) {
+	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
 	bool retval = false;
 	error = "";
 	if (curses_is_initialized) {
@@ -36,11 +43,24 @@ bool Presentation::Initialize(string & error) {
 		} else {
 			retval = true;
 			curses_is_initialized = true;
+			KeyMode(KeyModes::NONINTERACTIVE);
 		}
 	} else {
 		error = "initscr() failed.";
 	}
 	return retval;
+}
+
+void Presentation::KeyMode(KeyModes km) {
+	if (km == KeyModes::INTERACTIVE) {
+		curs_set(1);
+		echo();
+		noraw();
+	} else if (km == KeyModes::NONINTERACTIVE) {
+		raw();
+		noecho();
+		curs_set(0);
+	}
 }
 
 void Presentation::GetDimensions(int & l, int & c) {
@@ -51,4 +71,9 @@ void Presentation::GetDimensions(int & l, int & c) {
 	}
 }
 
+int Presentation::GetKey(WINDOW * w) {
+	if (w == nullptr)
+		w = stdscr;
+	return wgetch(w);
+}
 

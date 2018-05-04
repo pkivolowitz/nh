@@ -9,10 +9,13 @@ class Game {
 		~Game();
 
 		bool Initialize(Presentation * p, std::string & error);
-		void AddLevel();
+		void Run(std::string & error);
 		void End();
 		
 	private:
+		void AddLevel();
+		void EventLoop();
+		bool HandleQuit();
 		Presentation * p;
 		std::vector<Level *> levels;
 };
