@@ -4,6 +4,7 @@
 #include "presentation.hpp"
 #include "game.hpp"
 #include "level.hpp"
+#include "logging.hpp"
 
 using namespace std;
 

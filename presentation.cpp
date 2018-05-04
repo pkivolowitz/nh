@@ -2,13 +2,11 @@
 #include <fstream>
 #include <sstream>
 #include "presentation.hpp"
+#include "logging.hpp"
 
 using namespace std;
 
-extern ofstream log;
-
 Presentation::Presentation() {
-	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
 	curses_is_initialized = false;
 }
 
@@ -19,16 +17,17 @@ Presentation::~Presentation() {
 }
 
 void Presentation::End() {
-	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
+	ENTERING();
 	if (curses_is_initialized) {
 		KeyMode(KeyModes::INTERACTIVE);
 		endwin();
 		curses_is_initialized = false;
 	}
+	LEAVING();
 }
 
 bool Presentation::Initialize(string & error) {
-	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
+	ENTERING();
 	bool retval = false;
 	error = "";
 	if (curses_is_initialized) {
@@ -48,10 +47,12 @@ bool Presentation::Initialize(string & error) {
 	} else {
 		error = "initscr() failed.";
 	}
+	RETURNING(retval);
 	return retval;
 }
 
 void Presentation::KeyMode(KeyModes km) {
+	assert(curses_is_initialized);
 	if (km == KeyModes::INTERACTIVE) {
 		curs_set(1);
 		echo();
@@ -64,6 +65,7 @@ void Presentation::KeyMode(KeyModes km) {
 }
 
 void Presentation::GetDimensions(int & l, int & c) {
+	assert(curses_is_initialized);
 	l = c = 0;
 	if (curses_is_initialized) {
 		l = lines;
@@ -71,9 +73,26 @@ void Presentation::GetDimensions(int & l, int & c) {
 	}
 }
 
-int Presentation::GetKey(WINDOW * w) {
-	if (w == nullptr)
-		w = stdscr;
-	return wgetch(w);
+void Presentation::Refresh() {
+	refresh();
+}
+
+void Presentation::AddString(string & str, int line, int col, bool clear_to_eol, bool do_refresh) {
+	AddString((char *) str.c_str(), line, col, clear_to_eol, do_refresh);
+}
+
+void Presentation::AddString(char * s, int line, int col, bool clear_to_eol, bool do_refresh) {
+	wmove(stdscr, line, col);
+	if (clear_to_eol)
+		clrtoeol();
+	if (s != nullptr)
+		addstr(s);
+	if (do_refresh)
+		refresh();
+}
+
+int Presentation::GetKey() {
+	assert(curses_is_initialized);
+	return getch();
 }
 

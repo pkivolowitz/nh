@@ -4,15 +4,13 @@
 #include <cassert>
 #include <unistd.h>
 
+#include "logging.hpp"
 #include "game.hpp"
 
 using namespace std;
 
-extern ofstream log;
-
 Game::Game() {
 	p = nullptr;
-	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
 }
 
 Game::~Game() {
@@ -20,22 +18,25 @@ Game::~Game() {
 }
 
 void Game::End() {
+	ENTERING();
 	auto ri = levels.end();
 	while (ri > levels.begin()) {
 		ri--;
 		delete *ri;
 		levels.erase(ri);
-		log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
+		log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << " deleted level" << endl;	
 	}
-	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
+	LEAVING();
 }
 
 bool Game::Initialize(Presentation * pr, string & error) {
-	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
+	ENTERING();
+	bool retval = true;
 	error = "";
 	assert(pr != nullptr);
 	p = pr;
-	return true;
+	RETURNING(retval);
+	return retval;
 }
 
 void Game::EventLoop() {
@@ -55,29 +56,33 @@ void Game::EventLoop() {
 }
 
 void Game::Run(string & error) {
+	ENTERING();
 	try {
 		EventLoop();
 	}
 	catch (string e) {
 		error = e;
 	}
+	LEAVING();
 }
 
 bool Game::HandleQuit() {
+	ENTERING();
+	assert(p != nullptr);
 	bool retval = false;
-	wmove(stdscr, 0, 0);
-	clrtoeol();
 	p->KeyMode(KeyModes::INTERACTIVE);
-	addstr("Quit? (y|n): ");
-	refresh();
-	sleep(2);
+	p->AddString((char *) "Quit? (y|n): ");
+	p->Refresh();
+	retval = (tolower(p->GetKey()) == 'y');
+	p->AddString(nullptr, 0, 0, true, true);
 	p->KeyMode(KeyModes::NONINTERACTIVE);
-	return retval = true;
+	RETURNING(retval);
+	return retval;
 }
 
 
 void Game::AddLevel() {
-	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
+	ENTERING();
 	assert(p != nullptr);
 
 	Level * l = new Level();
@@ -86,5 +91,5 @@ void Game::AddLevel() {
 	p->GetDimensions(lines, cols);
 	l->Initialize(lines, cols);
 	levels.push_back(l);
-	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
+	LEAVING();
 }
