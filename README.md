@@ -2,4 +2,4 @@
 
 This is yet another nethack-like game.
 
-[Development_Notes](./development_notes.md)
+[Development_Notes](./devnotes/development_notes.md)
