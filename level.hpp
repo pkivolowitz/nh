@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+
 #include "floor_manager.hpp"
 #include "presentation.hpp"
 
@@ -23,6 +24,12 @@ enum {
 	DOOR_CLOSED
 };
 
+enum class BaseType {
+	ROCK,
+	HALLWAY,
+	ROOM 
+};
+
 class Cell {
 	public:
 		Cell();
@@ -32,9 +39,23 @@ class Cell {
 		bool IsVisible();
 		void SetVisibility(bool);
 
-	private:
+	protected:
 		CellFlags flags;
 		FloorManager fl;
+		BaseType bt;
+};
+
+class Rock : public Cell {
+public:
+	Rock();
+};
+
+class Room : public Cell {
+	public:
+		Room();
+
+	private:
+		int room_number;
 };
 
 class Level {

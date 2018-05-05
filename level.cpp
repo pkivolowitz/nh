@@ -26,7 +26,7 @@ bool Level::Initialize(int lines, int cols) {
 
 	cells.resize(lines * cols);
 	for (auto & c : cells) {
-		c = new Cell();
+		c = new Rock();
 	}
 	RETURNING(retval);	
 	return retval;
@@ -54,8 +54,8 @@ void Level::CalculateVisibility() {
 	}
 }
 
-
 Cell::Cell() {
+	ENTERING();
 	flags.passable = false;
 	flags.door = DOOR_NOT;
 	flags.blocks_line_of_sight = true;
@@ -80,5 +80,10 @@ bool Cell::IsVisible() {
 
 void Cell::SetVisibility(bool f) {
 	flags.is_visible = f;
+}
+
+Rock::Rock() {
+	ENTERING();
+	bt = BaseType::ROCK;
 }
 

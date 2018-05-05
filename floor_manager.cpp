@@ -8,7 +8,6 @@ FloorManager::FloorManager() {
 }
 
 FloorManager::~FloorManager() {
-	lock_guard<mutex> lg(lock);
 	while (!items.empty()) {
 		ItemPtr p = items.back();
 		delete p;
@@ -18,7 +17,6 @@ FloorManager::~FloorManager() {
 
 char FloorManager::Top() {
 	char retval = '%';
-	lock_guard<mutex> lg(lock);
 	if (!items.empty()) {
 		assert(items.front() != nullptr);
 		retval = items.front()->Symbol();
@@ -28,16 +26,23 @@ char FloorManager::Top() {
 
 void FloorManager::Push(ItemPtr p) {
 	assert(p != nullptr);
-	lock_guard<mutex> lg(lock);
 	items.push_back(p);
 }
 
 ItemPtr FloorManager::Pop() {
 	ItemPtr retval = nullptr;
-	lock_guard<mutex> lg(lock);
 	if (!items.empty()) {
 		retval = items.front();
 		items.pop_back();
 	}
 	return retval;
 }
+
+ItemPtr FloorManager::Peek() {
+	ItemPtr retval = nullptr;
+	if (!items.empty()) {
+		retval = items.front();
+	}
+	return retval;
+}
+	
