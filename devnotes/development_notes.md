@@ -30,3 +30,10 @@ First few lines of code written and added to github. Nothing much.
 Check out this amazing screen shot:
 
 ![awesome screenshot](./pnh_050518_01.png "Everything that can be rendered as of this moment.")
+
+# 5/5/2018 - 02
+
+* Have beginnings of rendering working. I have separated the need for rendering the map versus versus status information. Felt like the right thing to do - probably doesn't matter.
+
+![another awesome screenshot](./pnh_050518_02.png "Everything that can be rendered as of this moment.")
+
