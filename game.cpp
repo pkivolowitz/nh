@@ -25,7 +25,7 @@ void Game::End() {
 		ri--;
 		delete *ri;
 		levels.erase(ri);
-		log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << " deleted level" << endl;	
+		LOGMESSAGE("delete level");
 	}
 	LEAVING();
 }
@@ -44,6 +44,12 @@ void Game::EventLoop() {
 	/*	Initial assertions:
 		We must be connected to the presentation class.
 		There must be at least one layer in the game.
+
+		How Delay() is used - the event loop is using the TTY in non-blocking
+		mode - I have no wish to suck a laptop's battery dry however. So, if
+		something happens (needs_refresh is true) I go at full speed but if not
+		I call Delay() which wraps the platform dependent sleep function. On
+		Linux, usleep().
 	*/
 
 	assert(p != nullptr);
@@ -55,12 +61,12 @@ void Game::EventLoop() {
 		bool needs_refresh = false;
 		c = p->GetKey();
 		switch (c) {
-			case 'q':
+			case 'q': // Ask user if they want to quit
 				if (HandleQuit())
 					keep_going = false;
 				break;
 
-			case 22: // This keycode is ^V
+			case 22: // This keycode is ^V - show version info
 				HandleVersion();
 				break;
 		}
@@ -103,7 +109,9 @@ bool Game::HandleQuit() {
 void Game::HandleVersion() {
 	ENTERING();
 	assert(p != nullptr);
-	string v = string("pnh - version 0.0.0 - ") + string(__DATE__) + string(" [any key to continue]");
+	string v = string("pnh - version 0.0.0 - ") + 
+		string(__DATE__) + 
+		string(" [any key]");
 
 	p->KeyMode(KM_RAW | KM_NOECHO | KM_NOCURS);
 	p->AddString(v);
@@ -114,6 +122,12 @@ void Game::HandleVersion() {
 	LEAVING();
 }
 
+/*	Game::UpdateClock() - this method will return true only if the text of the
+	onscreen clock has changed. This means that even if this method is called
+	multiple times per secend, the screen will be refreshed one once per 
+	second (due to time). This is important because it allows the event loop
+	to sleep during relative inactivity.
+*/
 bool Game::UpdateClock() {
 	assert(p != nullptr);
 	bool retval;

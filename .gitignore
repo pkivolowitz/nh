@@ -30,7 +30,7 @@
 *.exe
 *.out
 *.app
-nh
+pnh
 
 .vscode
 *.swp

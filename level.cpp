@@ -2,37 +2,52 @@
 #include <fstream>
 
 #include "level.hpp"
+#include "logging.hpp"
 
 using namespace std;
 
-extern ofstream log;
-
-int Level::MAX_COLS = 128;
-int Level::MAX_LINES = 128;
-
 Level::Level() {
-	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;	
+}
+
+Level::~Level() {
+	ENTERING();
+	for (auto & p : cells) {
+		if (p != nullptr)
+			delete p;
+	}
+	LEAVING();
 }
 
 bool Level::Initialize(int lines, int cols) {
-	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;
-	assert(lines > 0 && lines < MAX_LINES);
-	assert(cols > 0 && cols < MAX_COLS);
-
+	ENTERING();
+	bool retval = true;
 	this->lines = lines;
 	this->cols = cols;
 
-	// The following adds empty cells to a screen sized array.
-	cells.resize(lines);
-	for (int l = 0; l < lines; l++)
-		cells.at(l).resize(cols);
-
-	
-	log << __FILE__ << " " << __FUNCTION__ << " " << __LINE__ << endl;
-	return true;
+	cells.resize(lines * cols);
+	for (auto & c : cells) {
+		c = new Cell();
+	}
+	RETURNING(retval);	
+	return retval;
 }
 
 Cell::Cell() {
-	flags.passable = 0;
-	flags.door = NOT_A_DOOR;
+	flags.passable = false;
+	flags.door = DOOR_NOT;
+	flags.blocks_line_of_sight = true;
 }
+
+char Cell::Symbol() {
+	return fl.Top();
+}
+
+void Cell::Push(ItemPtr p) {
+	assert(p != nullptr);
+	fl.Push(p);
+}
+
+ItemPtr Cell::Pop() {
+	return nullptr;
+}
+
