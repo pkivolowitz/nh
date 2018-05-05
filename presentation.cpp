@@ -19,7 +19,7 @@ Presentation::~Presentation() {
 void Presentation::End() {
 	ENTERING();
 	if (curses_is_initialized) {
-		KeyMode(KeyModes::INTERACTIVE);
+		KeyMode(KM_INTERACTIVE);
 		endwin();
 		curses_is_initialized = false;
 	}
@@ -41,8 +41,10 @@ bool Presentation::Initialize(string & error) {
 			error = "console window is not large enough.";
 		} else {
 			retval = true;
+			lines = 24;
+			cols = 80;
 			curses_is_initialized = true;
-			KeyMode(KeyModes::NONINTERACTIVE);
+			KeyMode(KM_NONINTERACTIVE);
 		}
 	} else {
 		error = "initscr() failed.";
@@ -51,17 +53,12 @@ bool Presentation::Initialize(string & error) {
 	return retval;
 }
 
-void Presentation::KeyMode(KeyModes km) {
+void Presentation::KeyMode(unsigned int km) {
 	assert(curses_is_initialized);
-	if (km == KeyModes::INTERACTIVE) {
-		curs_set(1);
-		echo();
-		noraw();
-	} else if (km == KeyModes::NONINTERACTIVE) {
-		raw();
-		noecho();
-		curs_set(0);
-	}
+	curs_set((km & KM_NOCURS) ? 0 : 1);
+	nodelay(stdscr, (km & KM_NODELAY) ? TRUE : FALSE);
+	(km & KM_NOECHO) ? noecho() : echo();
+	(km & KM_RAW) ? raw() : noraw();
 }
 
 void Presentation::GetDimensions(int & l, int & c) {
