@@ -20,3 +20,13 @@ First few lines of code written and added to github. Nothing much.
 * Dropped ```enum class```. Oh well. TTY modes are bit masks now.
 * Neat TTY hack that allows me to seamlessly shift between blocking and nonblocking I/O.
 * (^v)ersion command.
+
+# 5/5/2018 - 01
+
+* Underpinnings of levels coming along nicely.
+* Decided to start factoring in multithreading now rather than later. It it isn't used, oh well.
+* My first usage of lock_guard. Nice use of OO.
+
+Check out this amazing screen shot:
+
+![awesome screenshot](./pnh_050518_01.png "Everything that can be rendered as of this moment.")
