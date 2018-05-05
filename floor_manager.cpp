@@ -17,7 +17,7 @@ FloorManager::~FloorManager() {
 }
 
 char FloorManager::Top() {
-	char retval = ' ';
+	char retval = '%';
 	lock_guard<mutex> lg(lock);
 	if (!items.empty()) {
 		assert(items.front() != nullptr);

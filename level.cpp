@@ -19,7 +19,7 @@ Level::~Level() {
 }
 
 bool Level::Initialize(int lines, int cols) {
-	ENTERING();
+	LOGMESSAGE("lines: " << lines << " columns: " << cols);
 	bool retval = true;
 	this->lines = lines;
 	this->cols = cols;
@@ -31,6 +31,29 @@ bool Level::Initialize(int lines, int cols) {
 	RETURNING(retval);	
 	return retval;
 }
+
+int Level::Offset(int l, int c) {
+	return l * lines + c;
+}
+
+void Level::Render(Presentation * p) {
+	CalculateVisibility();
+	for (int l = 0; l < lines; l++) {
+		wmove(stdscr, l + p->TOP_DRAWABLE_LINE, p->LEFT_DRAWABLE_COL);
+		for (int c = 0; c < cols; c++) {
+			p->AddCh((cells.at(Offset(l, c))->IsVisible()) ? cells.at(Offset(l, c))->Symbol() : ' ');
+		}
+	}
+}
+
+void Level::CalculateVisibility() {
+	for (int l = 0; l < lines; l++) {
+		for (int c = 0; c < cols; c++) {
+			cells.at(Offset(l, c))->SetVisibility(true);
+		}
+	}
+}
+
 
 Cell::Cell() {
 	flags.passable = false;
@@ -49,5 +72,13 @@ void Cell::Push(ItemPtr p) {
 
 ItemPtr Cell::Pop() {
 	return nullptr;
+}
+
+bool Cell::IsVisible() {
+	return flags.is_visible;
+}
+
+void Cell::SetVisibility(bool f) {
+	flags.is_visible = f;
 }
 

@@ -60,7 +60,9 @@ void Game::EventLoop() {
 	bool keep_going = true;
 
 	while (keep_going) {
-		bool needs_refresh = false;
+		bool status_needs_refresh = false;
+		bool map_needs_refresh = false;
+
 		c = p->GetKey();
 		switch (c) {
 			case 'q': // Ask user if they want to quit
@@ -71,10 +73,21 @@ void Game::EventLoop() {
 			case 22: // This keycode is ^V - show version info
 				HandleVersion();
 				break;
+
+			case 'r': // debugging - force map refresh;
+				map_needs_refresh = true;
+				break;
+
+			default:
+				break;
 		}
 		if (UpdateClock())
-			needs_refresh = true;
-		if (needs_refresh) {
+			status_needs_refresh = true;
+		if (status_needs_refresh || map_needs_refresh) {
+			if (map_needs_refresh) {
+				p->ClearMapArea();
+				levels.at(current_level)->Render(p);
+			}
 			p->Refresh();
 		} else {
 			Delay();
@@ -153,10 +166,8 @@ void Game::AddLevel() {
 	assert(p != nullptr);
 
 	Level * l = new Level();
-	int lines, cols;
 
-	p->GetDimensions(lines, cols);
-	l->Initialize(lines, cols);
+	l->Initialize(p->DRAWABLE_LINES, p->DRAWABLE_COLS);
 	levels.push_back(l);
 	LEAVING();
 }

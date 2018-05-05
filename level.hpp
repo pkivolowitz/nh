@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include "floor_manager.hpp"
+#include "presentation.hpp"
 
 /*	CellFlags describes attributes of cells for which there can be only one. 
 	For example:
@@ -13,6 +14,7 @@ struct CellFlags {
 	unsigned char passable : 1;
 	unsigned char door : 2;
 	unsigned char blocks_line_of_sight : 1;
+	unsigned char is_visible : 1;
 };
 
 enum {
@@ -27,6 +29,8 @@ class Cell {
 		char Symbol();
 		void Push(ItemPtr);
 		ItemPtr Pop();
+		bool IsVisible();
+		void SetVisibility(bool);
 
 	private:
 		CellFlags flags;
@@ -38,9 +42,12 @@ class Level {
 		Level();
 		~Level();
 		bool Initialize(int lines, int cols);
+		void Render(Presentation * p);
 
 	private:
+		void CalculateVisibility();
 		std::vector<Cell *> cells;
 		int lines;
 		int cols;
+		int Offset(int l, int c);
 };

@@ -35,14 +35,14 @@ bool Presentation::Initialize(string & error) {
 	} else if ((this->stdscr = initscr()) != nullptr) {
 		lines = LINES;
 		cols = COLS;
-		if (lines < 24 || cols < 80) {
+		if (lines < MAX_LINES || cols < MAX_COLS) {
 			endwin();
 			this->stdscr = nullptr;
 			error = "console window is not large enough.";
 		} else {
 			retval = true;
-			lines = 24;
-			cols = 80;
+			lines = MAX_LINES;
+			cols = MAX_COLS;
 			curses_is_initialized = true;
 			KeyMode(KM_NONINTERACTIVE);
 		}
@@ -74,6 +74,13 @@ void Presentation::Refresh() {
 	refresh();
 }
 
+void Presentation::ClearMapArea() {
+	for (int l = TOP_DRAWABLE_LINE; l <= BOT_DRAWABLE_LINE; l++) {
+		wmove(stdscr, l, 0);
+		clrtoeol();
+	}
+}
+
 void Presentation::AddString(string & str, int line, int col, bool clear_to_eol, bool do_refresh) {
 	AddString((char *) str.c_str(), line, col, clear_to_eol, do_refresh);
 }
@@ -91,5 +98,9 @@ void Presentation::AddString(char * s, int line, int col, bool clear_to_eol, boo
 int Presentation::GetKey() {
 	assert(curses_is_initialized);
 	return getch();
+}
+
+void Presentation::AddCh(char c) {
+	addch(c);
 }
 
