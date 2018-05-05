@@ -6,7 +6,7 @@ srcs = $(wildcard *.cpp)
 objs = $(srcs:.cpp=.o)
 deps = $(srcs:.cpp=.d)
 
-nh: $(objs)
+pnh: $(objs)
 	$(CC) $^ -o $@ $(LFLAGS)
 
 %.o: %.cpp
@@ -16,6 +16,6 @@ nh: $(objs)
 
 # $(RM) is rm -f by default
 clean:
-	$(RM) $(objs) $(deps) test
+	$(RM) $(objs) $(deps) pnh
 
 -include $(deps)
