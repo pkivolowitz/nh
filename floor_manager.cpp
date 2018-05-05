@@ -1,5 +1,6 @@
 #include <cassert>
 #include "floor_manager.hpp"
+#include "level.hpp"
 #include "logging.hpp"
 
 using namespace std;
@@ -16,7 +17,7 @@ FloorManager::~FloorManager() {
 }
 
 char FloorManager::Top() {
-	char retval = '%';
+	char retval = '\0';
 	if (!items.empty()) {
 		assert(items.front() != nullptr);
 		retval = items.front()->Symbol();
@@ -38,7 +39,7 @@ ItemPtr FloorManager::Pop() {
 	return retval;
 }
 
-ItemPtr FloorManager::Peek() {
+const ItemPtr FloorManager::Peek() {
 	ItemPtr retval = nullptr;
 	if (!items.empty()) {
 		retval = items.front();

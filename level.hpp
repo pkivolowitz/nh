@@ -27,12 +27,13 @@ enum {
 enum class BaseType {
 	ROCK,
 	HALLWAY,
-	ROOM 
+	FLOOR 
 };
 
 class Cell {
 	public:
 		Cell();
+		virtual ~Cell();
 		char Symbol();
 		void Push(ItemPtr);
 		ItemPtr Pop();
@@ -43,20 +44,36 @@ class Cell {
 		CellFlags flags;
 		FloorManager fl;
 		BaseType bt;
+		static const char * base_type_symbols;
 };
+
+typedef Cell * CellPtr;
 
 class Rock : public Cell {
 public:
 	Rock();
+	virtual ~Rock();
 };
 
-class Room : public Cell {
+typedef Rock * RockPtr;
+
+class Floor : public Cell {
 	public:
-		Room();
+		Floor();
+		virtual ~Floor();
+};
+
+typedef Floor * FloorPtr;
+
+class Hallway : public Cell {
+	public:
+		Hallway();
+		virtual ~Hallway();
 
 	private:
-		int room_number;
 };
+
+typedef Hallway * HallwayPtr;
 
 class Level {
 	public:
@@ -64,6 +81,7 @@ class Level {
 		~Level();
 		bool Initialize(int lines, int cols);
 		void Render(Presentation * p);
+		void Replace(int l, int c, CellPtr cell);
 
 	private:
 		void CalculateVisibility();

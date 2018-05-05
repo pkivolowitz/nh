@@ -10,7 +10,7 @@ class FloorManager {
 		char Top();
 		void Push(ItemPtr);
 		ItemPtr Pop();
-		ItemPtr Peek();
+		const ItemPtr  Peek();
 
 	private:
 		std::vector<ItemPtr> items;
