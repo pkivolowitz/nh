@@ -21,11 +21,13 @@ Game::~Game() {
 void Game::End() {
 	ENTERING();
 	auto ri = levels.end();
+	int counter = levels.size();
 	while (ri > levels.begin()) {
 		ri--;
+		counter--;
 		delete *ri;
 		levels.erase(ri);
-		LOGMESSAGE("delete level");
+		LOGMESSAGE("deleted level: " << counter);
 	}
 	LEAVING();
 }
