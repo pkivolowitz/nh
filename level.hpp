@@ -97,9 +97,20 @@ class Level {
 		int lines;
 		int cols;
 		int Offset(int l, int c);
-		void CalcRoomBoundaries(Coordinate & tl, Coordinate & br);
+		void CalcRoomBoundaries(Coordinate & tl, Coordinate & br, Presentation * p);
 		void FillRoomBoundaries(Coordinate & tl, Coordinate & br, std::vector<Coordinate> & v, int room_number);
 		void FlattenRoom(std::vector<Coordinate> & v, int room_number);
 		void CheckFloor(Coordinate & c, std::vector<Coordinate> & v, int room_number);
-		static const int MAX_ROOMS = 8;
+		static const int MAX_ROOMS = 9;
+		static const int MIN_ROOM_WIDTH = 2;
+		static const int MIN_ROOM_HEIGHT = 2;
+		static const int MAX_ROOM_WIDTH_RAND = 5;
+		static const int MAX_ROOM_HEIGHT_RAND = 10;
 };
+
+class HallwayGenerator {
+	public:
+		HallwayGenerator();
+		void GenerateHallways(Level * l);
+};
+

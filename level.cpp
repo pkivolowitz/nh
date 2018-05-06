@@ -34,7 +34,7 @@ bool Level::Initialize(Presentation * p) {
 	Coordinate tl, br;
 	for (int room_number = MAX_ROOMS; room_number >= 0; room_number--) {
 		vector<Coordinate> v;
-		CalcRoomBoundaries(tl, br);
+		CalcRoomBoundaries(tl, br, p);
 		FillRoomBoundaries(tl, br, v, room_number);
 		if (room_number == MAX_ROOMS)
 			continue;
@@ -44,6 +44,11 @@ bool Level::Initialize(Presentation * p) {
 	return retval;
 }
 
+/* 	FlattenRoom - iterates through the cells in the vector v. These cells match the
+	current (minimal) room number. Each cell's neighbors are examined - if they are
+	a floor unit as well but with a larger room number, that cell is relabeled and
+	added to the vector.
+*/ 
 void Level::FlattenRoom(vector<Coordinate> & v, int room_number) {
 	//ENTERING();
 	unsigned int index = 0;
@@ -54,6 +59,11 @@ void Level::FlattenRoom(vector<Coordinate> & v, int room_number) {
 	//LEAVING();
 }
 
+/*	CheckFloor - Like a convolution kernel, this function checks a cell's 8 neighbors
+	to see if they are a) Floors and b) from a room with a higher index than the
+	current room. Rooms are defined in decreasing order so that this makes sense. The
+	algorithm isn't optimal, but with small arrays (24x80) this is irrelevant.
+*/
 void Level::CheckFloor(Coordinate & center, vector<Coordinate> & v, int room_number) {
 	//ENTERING();
 	for (int l = center.l - 1; l <= center.l + 1; l++) {
@@ -74,6 +84,10 @@ void Level::CheckFloor(Coordinate & center, vector<Coordinate> & v, int room_num
 	//LEAVING();
 }
 
+/*	FillRoomBoundaries - fills each cell with a Floor within the rectangle specified by tl and br.
+	Each cell coordinate is added to a vector which is used to flood fill the room number in the
+	step of level creation. Note that rooms are created with descending IDs.
+*/
 void Level::FillRoomBoundaries(Coordinate & tl, Coordinate & br, vector<Coordinate> & v, int room_number) {
 	//ENTERING();
 	for (int l = tl.l; l <= br.l; l++) {
@@ -85,9 +99,10 @@ void Level::FillRoomBoundaries(Coordinate & tl, Coordinate & br, vector<Coordina
 	//LEAVING();
 }
 
-void Level::CalcRoomBoundaries(Coordinate & tl, Coordinate & br) {
-	tl = Coordinate(rand() % (lines - 3), rand() % (cols - 3));
-	Coordinate dims(rand() % 5 + 2, rand() % 10 + 2);
+void Level::CalcRoomBoundaries(Coordinate & tl, Coordinate & br, Presentation * p) {
+	assert(p != nullptr);
+	tl = Coordinate(rand() % (lines - p->COMMAND_LINES - p->STATUS_LINES), rand() % (cols - 3));
+	Coordinate dims(rand() % MAX_ROOM_WIDTH_RAND + MIN_ROOM_WIDTH, rand() % MAX_ROOM_HEIGHT_RAND + MIN_ROOM_HEIGHT);
 	br = tl + dims;
 	br.Clip(lines, cols);
 }
