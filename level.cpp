@@ -45,14 +45,17 @@ bool Level::Initialize(Presentation * p) {
 }
 
 void Level::FlattenRoom(vector<Coordinate> & v, int room_number) {
-	auto ci = v.begin();
-	while (ci != v.end()) {
-		CheckFloor(*ci, v, room_number);
-		ci++;
+	//ENTERING();
+	unsigned int index = 0;
+	while (index < v.size()) {
+		CheckFloor(v.at(index), v, room_number);
+		index++;
 	}
+	//LEAVING();
 }
 
 void Level::CheckFloor(Coordinate & center, vector<Coordinate> & v, int room_number) {
+	//ENTERING();
 	for (int l = center.l - 1; l <= center.l + 1; l++) {
 		if (l < 0 || l >= lines)
 			continue;
@@ -68,15 +71,18 @@ void Level::CheckFloor(Coordinate & center, vector<Coordinate> & v, int room_num
 			}
 		}
 	}
+	//LEAVING();
 }
 
 void Level::FillRoomBoundaries(Coordinate & tl, Coordinate & br, vector<Coordinate> & v, int room_number) {
+	//ENTERING();
 	for (int l = tl.l; l <= br.l; l++) {
 		for (int c = tl.c; c <= br.c; c++) {
 			v.push_back(Coordinate(l, c));
 			Replace(l, c, new Floor(room_number));
 		}
 	}
+	//LEAVING();
 }
 
 void Level::CalcRoomBoundaries(Coordinate & tl, Coordinate & br) {

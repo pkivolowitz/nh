@@ -42,3 +42,11 @@ Check out this amazing screen shot:
 * Rudimentary beginnings of rooms.
 
 ![yet another awesome screenshot](./pnh_050518_03.png "Everything that can be rendered as of this moment.")
+
+# 5/6/2018 - 01
+
+* Removed mutex support. Never code multithreaded applications on an empty mind.
+* Rooms being platted and overlaps collapsed.
+
+![yet another awesome screenshot](./pnh_050618_01.png "Everything that can be rendered as of this moment.")
+
