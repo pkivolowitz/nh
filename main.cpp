@@ -1,6 +1,8 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <cstdlib>
+#include <getopt.h>
 #include "presentation.hpp"
 #include "game.hpp"
 #include "level.hpp"
@@ -20,8 +22,27 @@ static bool StartLog() {
 }
 
 int main(int argc, char * argv[]) {
-	if (!StartLog())
-		return 1;
+	srand((unsigned int) time(nullptr));
+	int c;
+	while ((c = getopt(argc, argv, "s:hl")) != -1) {
+		switch (c) {
+			case 'h':
+				cout << "Usage:\n";
+				cout << "-h prints this help\n";
+				cout << "-l enables logging\n";
+				cout << "-s specifies random seed (omit for time of day)\n";
+				return 0;
+
+			case 's':
+				srand(atoi(optarg));
+				break;
+
+			case 'l':
+				if (!StartLog())
+					return 1;
+				break;
+		}
+	}
 
 	Game g;
 	Presentation p;
