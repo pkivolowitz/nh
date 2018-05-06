@@ -102,7 +102,7 @@ int Presentation::GetKey() {
 }
 
 void Presentation::AddCh(char c) {
-	LOGMESSAGE("char: " << c);
+	//LOGMESSAGE("char: " << c);
 	addch(c);
 }
 

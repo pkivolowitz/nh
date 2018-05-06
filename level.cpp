@@ -30,7 +30,16 @@ bool Level::Initialize(Presentation * p) {
 		c = new Rock();
 	}
 	for (int room_number = 0; room_number < 9; room_number++) {
-	//	Coordinate br(rand() % )
+		Coordinate tl(rand() % (lines - 3), rand() % (cols - 3));
+		Coordinate dims(rand() % 5 + 2, rand() % 10 + 2);
+		Coordinate br = tl + dims;
+		br.Clip(lines, cols);
+		for (int l = tl.l; l <= br.l; l++) {
+			for (int c = tl.c; c <= br.c; c++) {
+				Replace(l, c, new Floor());
+			}
+		}
+		LOGMESSAGE("tl(" << tl.l << "," << tl.c << ") br(" << br.l << "," << br.c << ")");		
 	}
 	RETURNING(retval);	
 	return retval;
