@@ -3,6 +3,7 @@
 
 #include "floor_manager.hpp"
 #include "presentation.hpp"
+#include "coordinate.hpp"
 
 /*	CellFlags describes attributes of cells for which there can be only one. 
 	For example:
@@ -39,6 +40,7 @@ class Cell {
 		ItemPtr Pop();
 		bool IsVisible();
 		void SetVisibility(bool);
+		BaseType BT();
 
 	protected:
 		CellFlags flags;
@@ -60,7 +62,13 @@ typedef Rock * RockPtr;
 class Floor : public Cell {
 	public:
 		Floor();
+		Floor(int room_number);
 		virtual ~Floor();
+		void SetRoomNumber(int room_number);
+		int GetRoomNumber();
+
+	protected:
+		int room_number;
 };
 
 typedef Floor * FloorPtr;
@@ -89,4 +97,9 @@ class Level {
 		int lines;
 		int cols;
 		int Offset(int l, int c);
+		void CalcRoomBoundaries(Coordinate & tl, Coordinate & br);
+		void FillRoomBoundaries(Coordinate & tl, Coordinate & br, std::vector<Coordinate> & v, int room_number);
+		void FlattenRoom(std::vector<Coordinate> & v, int room_number);
+		void CheckFloor(Coordinate & c, std::vector<Coordinate> & v, int room_number);
+		static const int MAX_ROOMS = 8;
 };

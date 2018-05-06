@@ -1,6 +1,8 @@
 #include <iostream>
 #include <fstream>
+#include <vector>
 #include <cassert>
+#include <cstdlib>
 
 #include "level.hpp"
 #include "logging.hpp"
@@ -29,20 +31,59 @@ bool Level::Initialize(Presentation * p) {
 	for (auto & c : cells) {
 		c = new Rock();
 	}
-	for (int room_number = 0; room_number < 9; room_number++) {
-		Coordinate tl(rand() % (lines - 3), rand() % (cols - 3));
-		Coordinate dims(rand() % 5 + 2, rand() % 10 + 2);
-		Coordinate br = tl + dims;
-		br.Clip(lines, cols);
-		for (int l = tl.l; l <= br.l; l++) {
-			for (int c = tl.c; c <= br.c; c++) {
-				Replace(l, c, new Floor());
-			}
-		}
-		LOGMESSAGE("tl(" << tl.l << "," << tl.c << ") br(" << br.l << "," << br.c << ")");		
+	Coordinate tl, br;
+	for (int room_number = MAX_ROOMS; room_number >= 0; room_number--) {
+		vector<Coordinate> v;
+		CalcRoomBoundaries(tl, br);
+		FillRoomBoundaries(tl, br, v, room_number);
+		if (room_number == MAX_ROOMS)
+			continue;
+		FlattenRoom(v, room_number);
 	}
 	RETURNING(retval);	
 	return retval;
+}
+
+void Level::FlattenRoom(vector<Coordinate> & v, int room_number) {
+	auto ci = v.begin();
+	while (ci != v.end()) {
+		CheckFloor(*ci, v, room_number);
+		ci++;
+	}
+}
+
+void Level::CheckFloor(Coordinate & center, vector<Coordinate> & v, int room_number) {
+	for (int l = center.l - 1; l <= center.l + 1; l++) {
+		if (l < 0 || l >= lines)
+			continue;
+		for (int c = center.c - 1; c <= center.c + 1; c++) {
+			if (c < 0 || c >= cols)
+				continue;
+			if (c == center.c && l == center.l)
+				continue;
+			Floor * cp = (Floor *) cells.at(Offset(l, c));
+			if (cp->BT() == BaseType::FLOOR && cp->GetRoomNumber() > room_number) {
+				cp->SetRoomNumber(room_number);
+				v.push_back(Coordinate(l, c));
+			}
+		}
+	}
+}
+
+void Level::FillRoomBoundaries(Coordinate & tl, Coordinate & br, vector<Coordinate> & v, int room_number) {
+	for (int l = tl.l; l <= br.l; l++) {
+		for (int c = tl.c; c <= br.c; c++) {
+			v.push_back(Coordinate(l, c));
+			Replace(l, c, new Floor(room_number));
+		}
+	}
+}
+
+void Level::CalcRoomBoundaries(Coordinate & tl, Coordinate & br) {
+	tl = Coordinate(rand() % (lines - 3), rand() % (cols - 3));
+	Coordinate dims(rand() % 5 + 2, rand() % 10 + 2);
+	br = tl + dims;
+	br.Clip(lines, cols);
 }
 
 void Level::Replace(int l, int c, CellPtr cell) {
@@ -63,8 +104,10 @@ void Level::Render(Presentation * p) {
 	for (int l = 0; l < lines; l++) {
 		wmove(stdscr, l + p->TOP_DRAWABLE_LINE, p->LEFT_DRAWABLE_COL);
 		for (int c = 0; c < cols; c++) {
-			//LOGMESSAGE("line: " << l << " column: " << c);
-			p->AddCh((cells.at(Offset(l, c))->IsVisible()) ? cells.at(Offset(l, c))->Symbol() : ' ');
+			CellPtr cp = cells.at(Offset(l, c));
+			char s = (cp->IsVisible()) ? cp->Symbol() : ' ';
+			if (cp->BT() == BaseType::FLOOR) s = (char) (((Floor *) cp)->GetRoomNumber() + '0');
+			p->AddCh(s);
 		}
 	}
 }
@@ -97,6 +140,10 @@ char Cell::Symbol() {
 	if (retval == '\0')
 		retval = base_type_symbols[(int) bt];
 	return retval;
+}
+
+BaseType Cell::BT() {
+	return bt;
 }
 
 void Cell::Push(ItemPtr p) {
@@ -137,6 +184,21 @@ Hallway::~Hallway() {
 Floor::Floor() {
 	//ENTERING();
 	bt = BaseType::FLOOR;
+	room_number = 0;
+}
+
+Floor::Floor(int rm) {
+	//ENTERING();
+	bt = BaseType::FLOOR;
+	room_number = rm;
+}
+
+void Floor::SetRoomNumber(int rm) {
+	room_number = rm;
+}
+
+int Floor::GetRoomNumber() {
+	return room_number;
 }
 
 Floor::~Floor() {
