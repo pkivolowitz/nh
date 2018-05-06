@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <cassert>
 #include "presentation.hpp"
 #include "logging.hpp"
 

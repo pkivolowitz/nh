@@ -1,8 +1,10 @@
 #include <iostream>
 #include <fstream>
+#include <cassert>
 
 #include "level.hpp"
 #include "logging.hpp"
+#include "coordinate.hpp"
 
 using namespace std;
 
@@ -18,26 +20,24 @@ Level::~Level() {
 	LEAVING();
 }
 
-bool Level::Initialize(int lines, int cols) {
+bool Level::Initialize(Presentation * p) {
+	lines = p->DRAWABLE_LINES;
+	cols = p->DRAWABLE_COLS;
 	LOGMESSAGE("lines: " << lines << " columns: " << cols);
 	bool retval = true;
-	this->lines = lines;
-	this->cols = cols;
-
 	cells.resize(lines * cols);
 	for (auto & c : cells) {
 		c = new Rock();
 	}
-
-	Replace(10, 20, new Floor());
-	Replace(10, 21, new Hallway());
-
+	for (int room_number = 0; room_number < 9; room_number++) {
+	//	Coordinate br(rand() % )
+	}
 	RETURNING(retval);	
 	return retval;
 }
 
 void Level::Replace(int l, int c, CellPtr cell) {
-	LOGMESSAGE("line: " << l << " col: " << c);
+	//LOGMESSAGE("line: " << l << " col: " << c);
 	int o = Offset(l, c);
 	if (cells.at(o) != nullptr) {
 		delete cells.at(o);
@@ -46,7 +46,7 @@ void Level::Replace(int l, int c, CellPtr cell) {
 }
 
 int Level::Offset(int l, int c) {
-	return l * lines + c;
+	return l * cols + c;
 }
 
 void Level::Render(Presentation * p) {
@@ -54,7 +54,7 @@ void Level::Render(Presentation * p) {
 	for (int l = 0; l < lines; l++) {
 		wmove(stdscr, l + p->TOP_DRAWABLE_LINE, p->LEFT_DRAWABLE_COL);
 		for (int c = 0; c < cols; c++) {
-			LOGMESSAGE("line: " << l << " column: " << c);
+			//LOGMESSAGE("line: " << l << " column: " << c);
 			p->AddCh((cells.at(Offset(l, c))->IsVisible()) ? cells.at(Offset(l, c))->Symbol() : ' ');
 		}
 	}

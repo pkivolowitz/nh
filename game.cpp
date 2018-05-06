@@ -167,7 +167,7 @@ void Game::AddLevel() {
 
 	Level * l = new Level();
 
-	l->Initialize(p->DRAWABLE_LINES, p->DRAWABLE_COLS);
+	l->Initialize(p);
 	levels.push_back(l);
 	LEAVING();
 }

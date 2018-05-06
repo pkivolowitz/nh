@@ -79,7 +79,7 @@ class Level {
 	public:
 		Level();
 		~Level();
-		bool Initialize(int lines, int cols);
+		bool Initialize(Presentation * p);
 		void Render(Presentation * p);
 		void Replace(int l, int c, CellPtr cell);
 
