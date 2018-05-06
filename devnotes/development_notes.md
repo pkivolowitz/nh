@@ -37,3 +37,8 @@ Check out this amazing screen shot:
 
 ![another awesome screenshot](./pnh_050518_02.png "Everything that can be rendered as of this moment.")
 
+# 5/5/2018 - 03
+
+* Rudimentary beginnings of rooms.
+
+![yet another awesome screenshot](./pnh_050518_03.png "Everything that can be rendered as of this moment.")
