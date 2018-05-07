@@ -39,7 +39,7 @@ bool Level::Initialize(Presentation * p) {
 			continue;
 		FlattenRoom(v, room_number);
 	}
-	//AddBorders();
+	AddBorders();
 	RETURNING(retval);	
 	return retval;
 }
@@ -130,8 +130,8 @@ void Level::Render(Presentation * p) {
 		wmove(stdscr, l + p->TOP_DRAWABLE_LINE, p->LEFT_DRAWABLE_COL);
 		for (int c = 0; c < cols; c++) {
 			CellPtr cp = cells.at(Offset(l, c));
-			char s = (cp->IsVisible()) ? cp->Symbol() : ' ';
-			if (cp->BT() == BaseType::FLOOR) s = (char) (((Floor *) cp)->GetRoomNumber() + '0');
+			unsigned char s = (cp->IsVisible()) ? cp->Symbol() : ' ';
+			if (cp->BT() == BaseType::FLOOR) s = (unsigned char) (((Floor *) cp)->GetRoomNumber() + '0');
 			p->AddCh(s);
 		}
 	}
