@@ -104,8 +104,8 @@ class Level {
 		static const int MAX_ROOMS = 9;
 		static const int MIN_ROOM_WIDTH = 2;
 		static const int MIN_ROOM_HEIGHT = 2;
-		static const int MAX_ROOM_WIDTH_RAND = 5;
-		static const int MAX_ROOM_HEIGHT_RAND = 10;
+		static const int MAX_ROOM_WIDTH_RAND = 9;
+		static const int MAX_ROOM_HEIGHT_RAND = 5;
 };
 
 class HallwayGenerator {
