@@ -24,7 +24,7 @@ class Presentation {
 		void KeyMode(unsigned int km);
 		void AddString(char * s, int line = 0, int col = 0, bool clear_to_eol = true, bool do_refresh = false);
 		void AddString(std::string & str, int line = 0, int col = 0, bool clear_to_eol = true, bool do_refresh = false);
-		void AddCh(char c);
+		void AddCh(chtype c);
 		void Refresh();
 		void ClearMapArea();
 

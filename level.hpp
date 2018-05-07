@@ -36,7 +36,7 @@ class Cell {
 	public:
 		Cell();
 		virtual ~Cell();
-		virtual char Symbol();
+		virtual chtype Symbol();
 		void Push(ItemPtr);
 		ItemPtr Pop();
 		bool IsVisible();
@@ -47,7 +47,7 @@ class Cell {
 		CellFlags flags;
 		FloorManager fl;
 		BaseType bt;
-		static const char * base_type_symbols;
+		static const chtype base_type_symbols[3];
 };
 
 typedef Cell * CellPtr;
@@ -56,11 +56,11 @@ class Rock : public Cell {
 public:
 	Rock();
 	virtual ~Rock();
-	char Symbol();
-	void SetSymbol(unsigned char c);
+	chtype Symbol();
+	void SetSymbol(chtype c);
 
 private:
-	unsigned char symbol;
+	chtype symbol;
 };
 
 typedef Rock * RockPtr;

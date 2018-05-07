@@ -5,6 +5,6 @@ Item::Item() {
 	symbol = ' ';
 }
 
-char Item::Symbol() {
+chtype Item::Symbol() {
 	return symbol;
 }

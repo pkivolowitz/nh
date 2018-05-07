@@ -16,8 +16,8 @@ FloorManager::~FloorManager() {
 	}
 }
 
-char FloorManager::Top() {
-	char retval = '\0';
+chtype FloorManager::Top() {
+	chtype retval = '\0';
 	if (!items.empty()) {
 		assert(items.front() != nullptr);
 		retval = items.front()->Symbol();

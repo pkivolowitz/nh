@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include "curses.h"
 #include "item.hpp"
 
 class FloorManager {
@@ -7,7 +8,7 @@ class FloorManager {
 		FloorManager();
 		~FloorManager();
 
-		char Top();
+		chtype Top();
 		void Push(ItemPtr);
 		ItemPtr Pop();
 		const ItemPtr  Peek();

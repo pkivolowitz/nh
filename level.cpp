@@ -130,8 +130,8 @@ void Level::Render(Presentation * p) {
 		wmove(stdscr, l + p->TOP_DRAWABLE_LINE, p->LEFT_DRAWABLE_COL);
 		for (int c = 0; c < cols; c++) {
 			CellPtr cp = cells.at(Offset(l, c));
-			unsigned char s = (cp->IsVisible()) ? cp->Symbol() : ' ';
-			if (cp->BT() == BaseType::FLOOR) s = (unsigned char) (((Floor *) cp)->GetRoomNumber() + '0');
+			chtype s = (cp->IsVisible()) ? cp->Symbol() : ' ';
+			if (cp->BT() == BaseType::FLOOR) s = (chtype) (((Floor *) cp)->GetRoomNumber() + '0');
 			p->AddCh(s);
 		}
 	}
@@ -221,7 +221,7 @@ BorderFlags Level::EvaluateBorder(Coordinate & center) {
 }
 // - Cell ------------------------------------------------------------------- //
 
-const char * Cell::base_type_symbols = " #.";
+const chtype Cell::base_type_symbols[3] = {' ', '#', '.'};
 
 Cell::Cell() {
 	//ENTERING();
@@ -234,8 +234,8 @@ Cell::~Cell() {
 	//ENTERING();
 }
 
-char Cell::Symbol() {
-	char retval = fl.Top();
+chtype Cell::Symbol() {
+	chtype retval = fl.Top();
 	if (retval == '\0')
 		retval = base_type_symbols[(int) bt];
 	return retval;
@@ -270,12 +270,12 @@ Rock::Rock() {
 	symbol = ' ';
 }
 
-void Rock::SetSymbol(unsigned char c) {
+void Rock::SetSymbol(chtype c) {
 	symbol = c;
 }
 
-char Rock::Symbol() {
-	return (char) symbol;
+chtype Rock::Symbol() {
+	return symbol;
 }
 Rock::~Rock() {
 	//ENTERING();

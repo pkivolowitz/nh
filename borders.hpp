@@ -1,4 +1,5 @@
 #pragma once
+#include <curses.h>
 #include <map>
 
 #define	RLEFT		0x01
@@ -15,6 +16,6 @@ typedef unsigned char BorderFlags;
 class Border {
 	public:
 		Border();
-		static std::map<BorderFlags, unsigned char> alt_charmap;
+		static std::map<BorderFlags, chtype> alt_charmap;
 		BorderFlags bf;
 };

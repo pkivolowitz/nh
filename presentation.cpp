@@ -72,12 +72,12 @@ void Presentation::GetDimensions(int & l, int & c) {
 }
 
 void Presentation::Refresh() {
+	//box(stdscr, 0, 0);
 	refresh();
 }
 
 void Presentation::ClearMapArea() {
 	for (int l = TOP_DRAWABLE_LINE; l <= BOT_DRAWABLE_LINE; l++) {
-		wmove(stdscr, l, 0);
 		clrtoeol();
 	}
 }
@@ -101,7 +101,7 @@ int Presentation::GetKey() {
 	return getch();
 }
 
-void Presentation::AddCh(char c) {
+void Presentation::AddCh(chtype c) {
 	//LOGMESSAGE("char: " << c);
 	addch(c);
 }

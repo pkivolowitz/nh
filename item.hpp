@@ -1,13 +1,14 @@
 #pragma once
+#include <curses.h>
 
 class Item {
 	public:
 		Item();
 
-		char Symbol();
+		chtype Symbol();
 
 	private:
-		char symbol;
+		chtype symbol;
 };
 
 typedef Item * ItemPtr;
