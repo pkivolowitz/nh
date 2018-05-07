@@ -4,5 +4,12 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"files.associations": {
+			"map": "cpp",
+			"string": "cpp",
+			"string_view": "cpp",
+			"vector": "cpp"
+		}
+	}
 }

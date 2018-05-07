@@ -6,7 +6,6 @@
 
 #include "level.hpp"
 #include "logging.hpp"
-#include "coordinate.hpp"
 
 using namespace std;
 
@@ -40,6 +39,7 @@ bool Level::Initialize(Presentation * p) {
 			continue;
 		FlattenRoom(v, room_number);
 	}
+	//AddBorders();
 	RETURNING(retval);	
 	return retval;
 }
@@ -120,6 +120,10 @@ int Level::Offset(int l, int c) {
 	return l * cols + c;
 }
 
+int Level::Offset(Coordinate c) {
+	return Offset(c.l, c.c);
+}
+
 void Level::Render(Presentation * p) {
 	CalculateVisibility();
 	for (int l = 0; l < lines; l++) {
@@ -141,7 +145,81 @@ void Level::CalculateVisibility() {
 	}
 }
 
-// -------------------------------------------------------------------------- //
+void Level::AddBorders() {
+	ENTERING();
+	Border b;
+	for (int row = 0; row < lines; row++) {
+		for (int column = 0; column < cols; column++) {
+			Coordinate coord(row, column);
+			if (cells.at(Offset(coord))->BT() != BaseType::ROCK)
+				continue;
+			BorderFlags bf = EvaluateBorder(coord);
+			if (bf != 0) {
+				((RockPtr) cells.at(Offset(coord)))->SetSymbol(b.alt_charmap[bf]);
+			}
+		}
+	}
+	LEAVING();
+}
+
+/*	EvaluateBorder() - this function is called for every ROCK cell. It examines
+	it's eight neighbors looking for rooms. If any are found, the symbol rendered
+	for this rock is changed to the appropriate border. This function characterizes
+	the neighborhood.
+*/
+BorderFlags Level::EvaluateBorder(Coordinate & center) {
+	BorderFlags bf = 0;
+	Coordinate other;
+	// Check line above.
+	if (center.l > 0) {
+		other.l = center.l - 1;
+		// Check left
+		if (center.c > 0) {
+			other.c = center.c - 1;
+			bf |= (cells.at(Offset(other))->BT() == BaseType::FLOOR) ? RLEFT_UP : 0;
+		}
+		// Check right
+		if (center.c < cols - 2) {
+			other.c = center.c + 1;
+			bf |= (cells.at(Offset(other))->BT() == BaseType::FLOOR) ? RRIGHT_UP : 0;
+		}
+		// Check center
+		other.c = center.c;
+		bf |= (cells.at(Offset(other))->BT() == BaseType::FLOOR) ? RUP : 0;
+	}
+	// Check current line.
+	other.l = center.l;
+	// Check left
+	if (center.c > 0) {
+		other.c = center.c - 1;
+		bf |= (cells.at(Offset(other))->BT() == BaseType::FLOOR) ? RLEFT : 0;
+	}
+	// Check right
+	if (center.c < cols - 2) {
+		other.c = center.c + 1;
+		bf |= (cells.at(Offset(other))->BT() == BaseType::FLOOR) ? RRIGHT : 0;
+	}
+	LOGMESSAGE("coordinate: (" << center.l << ", " << center.c << ") (" << lines << ", " << cols << ")");
+	// Check line below.
+	if (center.l < lines - 2) {
+		other.l = center.l + 1;
+		// Check left
+		if (center.c > 0) {
+			other.c = center.c - 1;
+			bf |= (cells.at(Offset(other))->BT() == BaseType::FLOOR) ? RLEFT_DOWN : 0;
+		}
+		// Check right
+		if (center.c < cols - 2) {
+			other.c = center.c + 1;
+			bf |= (cells.at(Offset(other))->BT() == BaseType::FLOOR) ? RRIGHT_DOWN : 0;
+		}
+		// Check center
+		other.c = center.c;
+		bf |= (cells.at(Offset(other))->BT() == BaseType::FLOOR) ? RDOWN : 0;
+	}
+	return bf;
+}
+// - Cell ------------------------------------------------------------------- //
 
 const char * Cell::base_type_symbols = " #.";
 
@@ -184,14 +262,26 @@ void Cell::SetVisibility(bool f) {
 	flags.is_visible = f;
 }
 
+// - Rock ------------------------------------------------------------------- //
+
 Rock::Rock() {
 	//ENTERING();
 	bt = BaseType::ROCK;
+	symbol = ' ';
 }
 
+void Rock::SetSymbol(unsigned char c) {
+	symbol = c;
+}
+
+char Rock::Symbol() {
+	return (char) symbol;
+}
 Rock::~Rock() {
 	//ENTERING();
 }
+
+// - Hallway ---------------------------------------------------------------- //
 
 Hallway::Hallway() {
 	//ENTERING();
@@ -201,6 +291,8 @@ Hallway::Hallway() {
 Hallway::~Hallway() {
 	//ENTERING();
 }
+
+// - Floor ------------------------------------------------------------------ //
 
 Floor::Floor() {
 	//ENTERING();
