@@ -103,7 +103,5 @@ Border::Border() {
 		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RDOWN | RLEFT_UP | RRIGHT_DOWN, ACS_BTEE));
 		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RUP | RRIGHT_UP | RRIGHT_DOWN, ACS_TTEE));
 		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RLEFT_UP | RLEFT_DOWN | RDOWN | RRIGHT_DOWN | RRIGHT | RRIGHT_UP, ACS_LRCORNER));
-
-		// stopped at 21
 	}
 }
