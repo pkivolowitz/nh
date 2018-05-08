@@ -89,6 +89,20 @@ Border::Border() {
 		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RRIGHT_UP | RRIGHT | RLEFT | RLEFT_DOWN | RDOWN | RRIGHT_DOWN, ACS_VLINE));
 		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RRIGHT | RLEFT | RLEFT_DOWN | RRIGHT_DOWN | RDOWN | RLEFT_UP, ACS_VLINE));
 		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RLEFT | RLEFT_DOWN | RLEFT_UP | RDOWN, ACS_LLCORNER));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RLEFT_UP | RLEFT_DOWN | RDOWN, ACS_BTEE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RRIGHT | RRIGHT_UP | RRIGHT_DOWN | RUP | RLEFT_UP | RLEFT | RLEFT_DOWN, ACS_VLINE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RRIGHT | RRIGHT_UP | RRIGHT_DOWN | RDOWN | RLEFT_UP | RLEFT | RLEFT_DOWN, ACS_VLINE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RRIGHT | RRIGHT_DOWN | RLEFT | RLEFT_DOWN, ACS_VLINE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RRIGHT_DOWN | RLEFT_DOWN, ACS_TTEE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RRIGHT_DOWN | RRIGHT_UP, ACS_LTEE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RDOWN | RUP | RRIGHT_DOWN | RRIGHT_UP, ACS_HLINE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RLEFT | RRIGHT | RRIGHT_DOWN | RLEFT_UP, ACS_VLINE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RUP | RDOWN | RRIGHT_UP | RLEFT_DOWN, ACS_HLINE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RUP | RDOWN | RRIGHT_DOWN | RLEFT_UP, ACS_HLINE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RUP | RLEFT_UP | RRIGHT_DOWN, ACS_TTEE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RDOWN | RLEFT_UP | RRIGHT_DOWN, ACS_BTEE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RUP | RRIGHT_UP | RRIGHT_DOWN, ACS_TTEE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RLEFT_UP | RLEFT_DOWN | RDOWN | RRIGHT_DOWN | RRIGHT | RRIGHT_UP, ACS_LRCORNER));
 
 		// stopped at 21
 	}

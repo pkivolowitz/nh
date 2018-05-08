@@ -101,7 +101,7 @@ void Level::FillRoomBoundaries(Coordinate & tl, Coordinate & br, vector<Coordina
 
 void Level::CalcRoomBoundaries(Coordinate & tl, Coordinate & br, Presentation * p) {
 	assert(p != nullptr);
-	tl = Coordinate(rand() % (lines - p->COMMAND_LINES - p->STATUS_LINES - 1) + 1, rand() % (cols - 1 - MIN_ROOM_WIDTH));
+	tl = Coordinate(rand() % (lines - p->COMMAND_LINES - p->STATUS_LINES - 1) + 1, rand() % (cols - 2 - MIN_ROOM_WIDTH) + 1);
 	Coordinate dims(rand() % MAX_ROOM_HEIGHT_RAND + MIN_ROOM_HEIGHT, rand() % MAX_ROOM_WIDTH_RAND + MIN_ROOM_WIDTH);
 	br = tl + dims;
 	br.Clip(lines, cols);
