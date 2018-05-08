@@ -75,6 +75,8 @@ void Game::EventLoop() {
 				break;
 
 			case 'r': // debugging - force map refresh;
+				AddLevel();
+				current_level++;
 				map_needs_refresh = true;
 				break;
 
@@ -99,6 +101,7 @@ void Game::Run(string & error) {
 	ENTERING();
 	try {
 		AddLevel();
+		p->Refresh();
 		EventLoop();
 	}
 	catch (string e) {
