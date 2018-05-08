@@ -101,7 +101,7 @@ void Level::FillRoomBoundaries(Coordinate & tl, Coordinate & br, vector<Coordina
 
 void Level::CalcRoomBoundaries(Coordinate & tl, Coordinate & br, Presentation * p) {
 	assert(p != nullptr);
-	tl = Coordinate(rand() % (lines - p->COMMAND_LINES - p->STATUS_LINES), rand() % (cols - 1 - MIN_ROOM_WIDTH));
+	tl = Coordinate(rand() % (lines - p->COMMAND_LINES - p->STATUS_LINES - 1) + 1, rand() % (cols - 1 - MIN_ROOM_WIDTH));
 	Coordinate dims(rand() % MAX_ROOM_HEIGHT_RAND + MIN_ROOM_HEIGHT, rand() % MAX_ROOM_WIDTH_RAND + MIN_ROOM_WIDTH);
 	br = tl + dims;
 	br.Clip(lines, cols);
@@ -130,8 +130,11 @@ void Level::Render(Presentation * p) {
 		wmove(stdscr, l + p->TOP_DRAWABLE_LINE, p->LEFT_DRAWABLE_COL);
 		for (int c = 0; c < cols; c++) {
 			CellPtr cp = cells.at(Offset(l, c));
+			//chtype s = (cp->IsVisible()) ? ACS_VLINE : ' ';
 			chtype s = (cp->IsVisible()) ? cp->Symbol() : ' ';
-			if (cp->BT() == BaseType::FLOOR) s = (chtype) (((Floor *) cp)->GetRoomNumber() + '0');
+
+			if (cp->BT() == BaseType::FLOOR)
+				s = (chtype) (((Floor *) cp)->GetRoomNumber() + '0');
 			p->AddCh(s);
 		}
 	}
@@ -155,7 +158,9 @@ void Level::AddBorders() {
 				continue;
 			BorderFlags bf = EvaluateBorder(coord);
 			if (bf != 0) {
-				((RockPtr) cells.at(Offset(coord)))->SetSymbol(b.alt_charmap[bf]);
+				LOGMESSAGE("bf: " << hex << (unsigned int) bf << dec << " alt_charmap size: " << b.alt_charmap.size());
+				if (b.alt_charmap.find(bf) != b.alt_charmap.end())
+					((RockPtr) cells.at(Offset(coord)))->SetSymbol(b.alt_charmap[bf]);
 			}
 		}
 	}

@@ -110,6 +110,7 @@ class Level {
 		void CheckFloor(Coordinate & c, std::vector<Coordinate> & v, int room_number);
 		void AddBorders();
 		BorderFlags EvaluateBorder(Coordinate & center);
+
 		static const int MAX_ROOMS = 9;
 		static const int MIN_ROOM_WIDTH = 2;
 		static const int MIN_ROOM_HEIGHT = 2;

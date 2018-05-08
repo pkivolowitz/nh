@@ -17,5 +17,4 @@ class Border {
 	public:
 		Border();
 		static std::map<BorderFlags, chtype> alt_charmap;
-		BorderFlags bf;
 };
