@@ -27,7 +27,7 @@ class Presentation {
 		void AddCh(chtype c);
 		void Refresh();
 		void ClearMapArea();
-
+		void Move(int l, int c);
 		static const int COMMAND_LINES = 1;		// lines reserved at top of screen
 		static const int STATUS_LINES = 2;		// lines reserved at bottom of screen
 		static const int MAX_LINES = 24;		// assumed logical lines in screen

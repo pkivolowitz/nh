@@ -71,8 +71,11 @@ void Presentation::GetDimensions(int & l, int & c) {
 	}
 }
 
+void Presentation::Move(int l, int c) {
+	wmove(stdscr, l, c);
+}
+
 void Presentation::Refresh() {
-	//box(stdscr, 0, 0);
 	refresh();
 }
 
