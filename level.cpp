@@ -202,7 +202,7 @@ void Level::AddBorders() {
 				continue;
 			BorderFlags bf = EvaluateBorder(coord);
 			if (bf != 0) {
-				LOGMESSAGE("bf: " << hex << (unsigned int) bf << dec << " alt_charmap size: " << b.alt_charmap.size());
+				//LOGMESSAGE("bf: " << hex << (unsigned int) bf << dec << " alt_charmap size: " << b.alt_charmap.size());
 				if (b.alt_charmap.find(bf) != b.alt_charmap.end())
 					((RockPtr) cells.at(Offset(coord)))->SetSymbol(b.alt_charmap[bf]);
 			}
@@ -248,7 +248,7 @@ BorderFlags Level::EvaluateBorder(Coordinate & center) {
 		other.c = center.c + 1;
 		bf |= (cells.at(Offset(other))->BT() == BaseType::FLOOR) ? RRIGHT : 0;
 	}
-	LOGMESSAGE("coordinate: (" << center.l << ", " << center.c << ") (" << lines << ", " << cols << ")");
+	//LOGMESSAGE("coordinate: (" << center.l << ", " << center.c << ") (" << lines << ", " << cols << ")");
 	// Check line below.
 	if (center.l < lines - 2) {
 		other.l = center.l + 1;
