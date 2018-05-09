@@ -139,6 +139,7 @@ class Level {
 
 		RCMap CharacterizeRooms();
 		void AddHallways();
+		void AddHallwaysBetweenRooms(RCMap & rcm);
 };
 
 class HallwayGenerator {

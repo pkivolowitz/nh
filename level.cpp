@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <map>
 #include <cassert>
 #include <cstdlib>
 
@@ -164,8 +165,37 @@ Level::RCMap Level::CharacterizeRooms() {
 	return rcmap;
 }
 
+void Level::AddHallwaysBetweenRooms(RCMap & rcm) {
+	if (rcm.size() > 1) {
+		//
+		//multimap<int, int> reachable;
+		//while (connections.size() != rcm.size()) {
+			/* 
+			This code is bad:
+			int room_a = rand() % rcm.size();
+			int room_b = room_a;
+			while (room_a == room_b)
+				room_b = rand() % rcm.size();
+			*/
+			/* 	The strategy:
+				Select two previously unconnected (to each other) rooms.
+				Add reachability info about the two rooms being reachable to each other.
+				Choose exit points in both rooms (leverage centroids).
+				Depending upon distance between exit points, pick number of kinks.
+				Define elbows.
+				Iterate Manhattan path:
+					If a new room is crossed, update reachability
+
+				The loop should stop when the size of reachable is 1 and
+				size of that 1 is same as size of rcm.
+			*/
+		//}
+	}
+}
+
 void Level::AddHallways() {
 	RCMap rcm = CharacterizeRooms();
+	AddHallwaysBetweenRooms(rcm);
 }
 
 void Level::Render(Presentation * p) {
