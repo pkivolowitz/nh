@@ -21,15 +21,7 @@ Level::~Level() {
 	LEAVING();
 }
 
-bool Level::Initialize(Presentation * p) {
-	lines = p->DRAWABLE_LINES;
-	cols = p->DRAWABLE_COLS;
-	LOGMESSAGE("lines: " << lines << " columns: " << cols);
-	bool retval = true;
-	cells.resize(lines * cols);
-	for (auto & c : cells) {
-		c = new Rock();
-	}
+void Level::MakeRooms(Presentation * p) {
 	Coordinate tl, br;
 	for (int room_number = MAX_ROOMS; room_number >= 0; room_number--) {
 		vector<Coordinate> v;
@@ -39,7 +31,20 @@ bool Level::Initialize(Presentation * p) {
 			continue;
 		FlattenRoom(v, room_number);
 	}
+}
+
+bool Level::Initialize(Presentation * p) {
+	lines = p->DRAWABLE_LINES;
+	cols = p->DRAWABLE_COLS;
+	LOGMESSAGE("lines: " << lines << " columns: " << cols);
+	bool retval = true;
+	cells.resize(lines * cols);
+	for (auto & c : cells) {
+		c = new Rock();
+	}
+	MakeRooms(p);
 	AddBorders();
+	AddHallways();
 	RETURNING(retval);	
 	return retval;
 }
@@ -124,10 +129,49 @@ int Level::Offset(Coordinate c) {
 	return Offset(c.l, c.c);
 }
 
+Level::RCMap Level::CharacterizeRooms() {
+	RCMap rcmap;
+	for (int l = 0; l < lines; l++) {
+		for (int c = 0; c < cols; c++) {
+			Coordinate cell_coord(l, c);
+			int o = Offset(cell_coord);
+			FloorPtr p = (FloorPtr) cells.at(o);
+			if (p->BT() != BaseType::FLOOR)
+				continue;
+			auto it = rcmap.find(p->GetRoomNumber());
+			if (it == rcmap.end()) {
+				RoomCharacterization rc;
+				rc.top_left = cell_coord;
+				rc.bot_right = cell_coord;
+				rcmap[p->GetRoomNumber()] = rc;
+			} else {
+				RoomCharacterization * rcptr = &(it->second);
+				if (cell_coord.l < rcptr->top_left.l)
+					rcptr->top_left.l = cell_coord.l;
+				if (cell_coord.l > rcptr->bot_right.l)
+					rcptr->bot_right.l = cell_coord.l;
+				if (cell_coord.c < rcptr->top_left.c)
+					rcptr->top_left.c = cell_coord.c;
+				if (cell_coord.c > rcptr->bot_right.c)
+					rcptr->bot_right.c = cell_coord.c;
+			}
+		}
+	}
+	for (auto & rc : rcmap) {
+		rc.second.centroid = Coordinate::Centroid(rc.second.top_left, rc.second.bot_right);
+		LOGMESSAGE("Room: " << rc.first << " Centroid: (" << rc.second.centroid.l << ", " << rc.second.centroid.c << ")");
+	}
+	return rcmap;
+}
+
+void Level::AddHallways() {
+	RCMap rcm = CharacterizeRooms();
+}
+
 void Level::Render(Presentation * p) {
 	CalculateVisibility();
 	for (int l = 0; l < lines; l++) {
-		wmove(stdscr, l + p->TOP_DRAWABLE_LINE, p->LEFT_DRAWABLE_COL);
+		p->Move(l + p->TOP_DRAWABLE_LINE, p->LEFT_DRAWABLE_COL);
 		for (int c = 0; c < cols; c++) {
 			CellPtr cp = cells.at(Offset(l, c));
 			//chtype s = (cp->IsVisible()) ? ACS_VLINE : ' ';

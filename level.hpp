@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <map>
 
 #include "floor_manager.hpp"
 #include "presentation.hpp"
@@ -32,6 +33,8 @@ enum class BaseType {
 	FLOOR 
 };
 
+// ---------- Cell ------------------------------
+
 class Cell {
 	public:
 		Cell();
@@ -52,6 +55,8 @@ class Cell {
 
 typedef Cell * CellPtr;
 
+// ---------- Rock ------------------------------
+
 class Rock : public Cell {
 public:
 	Rock();
@@ -64,6 +69,8 @@ private:
 };
 
 typedef Rock * RockPtr;
+
+// ---------- Floor -----------------------------
 
 class Floor : public Cell {
 	public:
@@ -79,6 +86,8 @@ class Floor : public Cell {
 
 typedef Floor * FloorPtr;
 
+// ---------- Hallway ---------------------------
+
 class Hallway : public Cell {
 	public:
 		Hallway();
@@ -88,6 +97,8 @@ class Hallway : public Cell {
 };
 
 typedef Hallway * HallwayPtr;
+
+// ---------- Level -----------------------------
 
 class Level {
 	public:
@@ -109,6 +120,7 @@ class Level {
 		void FlattenRoom(std::vector<Coordinate> & v, int room_number);
 		void CheckFloor(Coordinate & c, std::vector<Coordinate> & v, int room_number);
 		void AddBorders();
+		void MakeRooms(Presentation * p);
 		BorderFlags EvaluateBorder(Coordinate & center);
 
 		static const int MAX_ROOMS = 9;
@@ -116,6 +128,17 @@ class Level {
 		static const int MIN_ROOM_HEIGHT = 2;
 		static const int MAX_ROOM_WIDTH_RAND = 9;
 		static const int MAX_ROOM_HEIGHT_RAND = 5;
+
+		struct RoomCharacterization {
+			Coordinate top_left;
+			Coordinate bot_right;
+			Coordinate centroid;
+		};
+
+		typedef std::map<int, RoomCharacterization> RCMap;
+
+		RCMap CharacterizeRooms();
+		void AddHallways();
 };
 
 class HallwayGenerator {
