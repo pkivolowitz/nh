@@ -62,4 +62,9 @@ Check out this amazing screen shot:
 
 ![yet another awesome screenshot](./pnh_050818_01.png "Everything that can be rendered as of this moment.")
 
+# 5/9/2018 - 01
+
+* Found about 10 more "corner cases" and fixed these (walls).
+* Wrote means of "characterizing" rooms in preparation for hallway generation.
+* Described current plan for hallway generating algorithm.
 
