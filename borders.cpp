@@ -119,5 +119,7 @@ Border::Border() {
 		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RLEFT_UP | RUP | RRIGHT_UP | RRIGHT | RRIGHT_DOWN | RDOWN, ACS_HLINE));
 		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RUP | RRIGHT_UP | RRIGHT | RRIGHT_DOWN | RDOWN | RLEFT_DOWN, ACS_HLINE));
 		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RLEFT | RLEFT_UP | RUP | RRIGHT_UP | RRIGHT | RRIGHT_DOWN, ACS_VLINE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RUP | RLEFT_UP | RLEFT | RDOWN | RLEFT_DOWN, ACS_HLINE));
+		Border::alt_charmap.insert(pair<BorderFlags, chtype>(RUP | RLEFT_UP | RLEFT | RRIGHT_UP | RRIGHT, ACS_VLINE));
 	}
 }
