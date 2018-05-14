@@ -2,6 +2,8 @@
 #include <fstream>
 #include <vector>
 #include <map>
+#include <set>
+#include <unordered_set>
 #include <cassert>
 #include <cstdlib>
 
@@ -166,7 +168,14 @@ Level::RCMap Level::CharacterizeRooms() {
 }
 
 void Level::AddHallwaysBetweenRooms(RCMap & rcm) {
+	multimap<int, int> reachability;
+	unordered_set<int> unreachable;
+
 	if (rcm.size() > 1) {
+		for (auto & it : rcm) {
+			unreachable.insert(it.first);
+		}
+		// unreachable now has a list of 
 		//
 		//multimap<int, int> reachable;
 		//while (connections.size() != rcm.size()) {

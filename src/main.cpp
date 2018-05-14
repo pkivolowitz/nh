@@ -10,15 +10,15 @@
 
 using namespace std;
 
-ofstream log;
+ofstream _Log;
 
 static bool StartLog() {
 	string log_file_name("/tmp/nh_log.txt");
-	log.open(log_file_name);
-	if (!log.is_open()) {
+	_Log.open(log_file_name);
+	if (!_Log.is_open()) {
 		cerr << "Could not open log file " << log_file_name << ".\n";
 	}
-	return log.is_open();
+	return _Log.is_open();
 }
 
 int main(int argc, char * argv[]) {
@@ -67,9 +67,11 @@ int main(int argc, char * argv[]) {
 
 	if (error.size() > 0) {
 		cerr << error << endl;
-		log << error << endl;
+		LOGMESSAGE(error);
 	}
 
-	log.close();
+	if (_Log.is_open())
+		_Log.close();
+
 	return 0;
 }

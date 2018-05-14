@@ -101,6 +101,7 @@ void Game::Run(string & error) {
 	ENTERING();
 	try {
 		AddLevel();
+		levels.at(current_level)->Render(p);
 		p->Refresh();
 		EventLoop();
 	}
