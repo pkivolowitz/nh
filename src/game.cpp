@@ -32,14 +32,11 @@ void Game::End() {
 	LEAVING();
 }
 
-bool Game::Initialize(Presentation * pr, string & error) {
+void Game::Initialize(Presentation * pr) {
 	ENTERING();
-	bool retval = true;
-	error = "";
 	assert(pr != nullptr);
 	p = pr;
-	RETURNING(retval);
-	return retval;
+	LEAVING();
 }
 
 void Game::EventLoop() {
@@ -97,17 +94,12 @@ void Game::EventLoop() {
 	}
 }
 
-void Game::Run(string & error) {
+void Game::Run() {
 	ENTERING();
-	try {
-		AddLevel();
-		levels.at(current_level)->Render(p);
-		p->Refresh();
-		EventLoop();
-	}
-	catch (string e) {
-		error = e;
-	}
+	AddLevel();
+	levels.at(current_level)->Render(p);
+	p->Refresh();
+	EventLoop();
 	LEAVING();
 }
 

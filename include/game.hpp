@@ -10,8 +10,8 @@ class Game {
 		Game();
 		~Game();
 
-		bool Initialize(Presentation * p, std::string & error);
-		void Run(std::string & error);
+		void Initialize(Presentation * p);
+		void Run();
 		void End();
 		
 	private:
