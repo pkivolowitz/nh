@@ -21,9 +21,9 @@ static bool StartLog() {
 	return _Log.is_open();
 }
 
-int main(int argc, char * argv[]) {
-	srand((unsigned int) time(nullptr));
+static bool HandleOptions(int argc, char * argv[]) {
 	int c;
+	bool retval = true;
 	while ((c = getopt(argc, argv, "s:hl")) != -1) {
 		switch (c) {
 			case 'h':
@@ -31,7 +31,8 @@ int main(int argc, char * argv[]) {
 				cout << "-h prints this help\n";
 				cout << "-l enables logging\n";
 				cout << "-s specifies random seed (omit for time of day)\n";
-				return 0;
+				retval = false;
+				break;
 
 			case 's':
 				srand(atoi(optarg));
@@ -43,7 +44,14 @@ int main(int argc, char * argv[]) {
 				break;
 		}
 	}
+	return retval;
+}
 
+int main(int argc, char * argv[]) {
+	srand((unsigned int) time(nullptr));
+	if (!HandleOptions(argc, argv))
+		return 0;
+		
 	Game g;
 	Presentation p;
 	string error;
