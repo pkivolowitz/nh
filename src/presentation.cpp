@@ -27,31 +27,29 @@ void Presentation::End() {
 	LEAVING();
 }
 
-bool Presentation::Initialize(string & error) {
+void Presentation::Initialize() {
 	ENTERING();
-	bool retval = false;
-	error = "";
+	string preamble(__FUNCTION__);
+
 	if (curses_is_initialized) {
-		error = "attempt to initialize curses more than once.";
+		throw preamble + string(" attempt to initialize curses more than once.");
 	} else if ((this->stdscr = initscr()) != nullptr) {
 		lines = LINES;
 		cols = COLS;
 		if (lines < MAX_LINES || cols < MAX_COLS) {
 			endwin();
 			this->stdscr = nullptr;
-			error = "console window is not large enough.";
+			throw preamble + string(" console window is not large enough.");
 		} else {
-			retval = true;
 			lines = MAX_LINES;
 			cols = MAX_COLS;
 			curses_is_initialized = true;
 			KeyMode(KM_NONINTERACTIVE);
 		}
 	} else {
-		error = "initscr() failed.";
+		throw preamble + string(" initscr() failed.");
 	}
-	RETURNING(retval);
-	return retval;
+	LEAVING();
 }
 
 void Presentation::KeyMode(unsigned int km) {

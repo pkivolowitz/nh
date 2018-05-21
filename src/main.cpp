@@ -51,32 +51,26 @@ int main(int argc, char * argv[]) {
 	srand((unsigned int) time(nullptr));
 	if (!HandleOptions(argc, argv))
 		return 0;
-		
+
 	Game g;
 	Presentation p;
-	string error;
 
 	/*	p provides the presentation layer.
 		g provides the game itself.
 	*/
 
-	if (p.Initialize(error)) {
-		if (g.Initialize(&p, error)) {
-			g.Run(error);
-		} else {
-			cerr << "Game failed to initialize. Why:\n";
-		}
-	} else {
-		cerr << "Curses failed to initialize. Why:\n";
+	try {
+		p.Initialize();
+		g.Initialize(&p);
+		g.Run();
+	}
+	catch (string e) {
+		cerr << "Exception occurred: " << e << endl;
+		LOGMESSAGE(e);
 	}
 
 	g.End();
 	p.End();
-
-	if (error.size() > 0) {
-		cerr << error << endl;
-		LOGMESSAGE(error);
-	}
 
 	if (_Log.is_open())
 		_Log.close();

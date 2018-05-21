@@ -17,7 +17,7 @@ class Presentation {
 		Presentation();
 		~Presentation();
 
-		bool Initialize(std::string & error);
+		void Initialize();
 		void GetDimensions(int & l, int & c);
 		int GetKey();
 		void End();
