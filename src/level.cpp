@@ -146,7 +146,7 @@ Level::RCMap Level::CharacterizeRooms() {
 				RoomCharacterization rc;
 				rc.top_left = cell_coord;
 				rc.bot_right = cell_coord;
-				rcmap[p->GetRoomNumber()] = rc;
+				rcmap.insert(std::pair<int, RoomCharacterization>(p->GetRoomNumber(), rc));
 			} else {
 				RoomCharacterization * rcptr = &(it->second);
 				if (cell_coord.l < rcptr->top_left.l)
@@ -204,6 +204,16 @@ void Level::AddHallwaysBetweenRooms(RCMap & rcm) {
 
 void Level::AddHallways() {
 	RCMap rcm = CharacterizeRooms();
+	LOGMESSAGE("rcmap size: " << rcm.size());
+	set<int> bad_rows;
+	set<int> bad_cols;
+	for (auto & rm : rcm) {
+		bad_rows.insert(rm.second.top_left.l);
+		bad_rows.insert(rm.second.bot_right.l);
+		bad_cols.insert(rm.second.top_left.c);
+		bad_cols.insert(rm.second.bot_right.c);
+	}
+	
 	AddHallwaysBetweenRooms(rcm);
 }
 
