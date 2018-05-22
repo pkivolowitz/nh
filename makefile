@@ -1,6 +1,6 @@
 SYS := $(shell g++ -dumpmachine)
 ifneq (, $(findstring apple, $(SYS)))
-CFLAGS	= -Wall -Iinclude -std=c++17
+CFLAGS	= -Wall -Iinclude -std=c++17 -g
 else
 CFLAGS	= -Wall -Iinclude -std=c++17 -g
 endif
