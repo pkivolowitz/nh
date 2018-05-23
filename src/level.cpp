@@ -235,6 +235,23 @@ void Level::AddHallways() {
 	LOGMESSAGE("rcmap size: " << rcm.size());
 	vector<int> good_lines;
 	vector<int> good_cols;
+	FindGoodLinesAndColumns(rcm, good_lines, good_cols);
+	vector<Coordinate> corners;
+	while (true) {
+		MakeCorners(corners, good_lines, good_cols);
+		for (unsigned int c = 0; c < corners.size() - 1; c++) {
+			Manhatan(corners.at(c), corners.at(c+1), rcm);
+		}
+		//LEFT OFF HERE - ABOUT TO TAKE INTO ACCOUNT DISCONNECTED ROOMS.
+		corners.clear();
+		break;
+	}
+	AddJinks();
+	AddDoors();
+	LEAVING();
+}
+
+void Level::FindGoodLinesAndColumns(RCMap & rcm, std::vector<int> & good_lines, std::vector<int> & good_cols) {
 	set<int> templ;
 	set<int> tempc;
 	// First create sets with all possible rows and columns.
@@ -252,24 +269,20 @@ void Level::AddHallways() {
 	// Convert the sets of what remains into vectors permitting easy random choices of just the right values.
 	std::copy(templ.begin(), templ.end(), std::back_inserter(good_lines));
 	std::copy(tempc.begin(), tempc.end(), std::back_inserter(good_cols));
-	while (true) {
-		vector<Coordinate> corners;
-		int number_of_corners = (rand() % 8) + 4;
-		for (int c = 0; c < number_of_corners; c++) {
-			Coordinate coord;
-			coord.l = good_lines.at(rand() % good_lines.size());
-			coord.c = good_cols.at(rand() % good_cols.size());
+}
+
+void Level::MakeCorners(vector<Coordinate> & corners, vector<int> & good_lines, vector<int> & good_cols) {
+	bool filling_in = corners.size() > 0;
+	int number_of_corners = (rand() % 8) + (filling_in ? 1 : 4);
+	for (int c = 0; c < number_of_corners; c++) {
+		Coordinate coord;
+		coord.l = good_lines.at(rand() % good_lines.size());
+		coord.c = good_cols.at(rand() % good_cols.size());
+		if (filling_in)
+			corners.insert(corners.end() - 1, coord);
+		else
 			corners.push_back(coord);
-		}
-		// corners is now peopled by "good" corners.
-		for (unsigned int c = 0; c < corners.size() - 1; c++) {
-			Manhatan(corners.at(c), corners.at(c+1), rcm);
-		}
-		//LEFT OFF HERE - ABOUT TO TAKE INTO ACCOUNT DISCONNECTED ROOMS.
-		break;
 	}
-	AddJinks();
-	AddDoors();
 }
 
 void Level::AddJinks() {

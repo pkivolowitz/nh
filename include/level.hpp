@@ -146,6 +146,8 @@ class Level {
 		void Manhatan(Coordinate &, Coordinate &, RCMap &);
 		void EastWest(int, int, int, RCMap &);
 		void NorthSouth(int, int, int, RCMap &);
+		void MakeCorners(std::vector<Coordinate> &, std::vector<int> &, std::vector<int> &);
+		void FindGoodLinesAndColumns(RCMap &, std::vector<int> & good_lines, std::vector<int> & good_cols);
 };
 
 class HallwayGenerator {
