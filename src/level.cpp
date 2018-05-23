@@ -243,6 +243,7 @@ void Level::AddHallways() {
 			Manhatan(corners.at(c), corners.at(c+1), rcm);
 		}
 		//LEFT OFF HERE - ABOUT TO TAKE INTO ACCOUNT DISCONNECTED ROOMS.
+		LogConnectivity(rcm);
 		corners.clear();
 		break;
 	}
@@ -251,6 +252,14 @@ void Level::AddHallways() {
 	LEAVING();
 }
 
+void Level::LogConnectivity(RCMap & rcm) {
+	if (_Log.is_open()) {
+		_Log << "Connectivity Report: " << rcm.size() << " rooms." << endl;
+		for (auto & rm : rcm) {
+			_Log << "Room: " << rm.first << " " << (rm.second.connected ? "Connected" : "Unconnected") << endl;
+		}
+	}
+}
 void Level::FindGoodLinesAndColumns(RCMap & rcm, std::vector<int> & good_lines, std::vector<int> & good_cols) {
 	set<int> templ;
 	set<int> tempc;

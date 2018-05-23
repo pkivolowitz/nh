@@ -148,6 +148,7 @@ class Level {
 		void NorthSouth(int, int, int, RCMap &);
 		void MakeCorners(std::vector<Coordinate> &, std::vector<int> &, std::vector<int> &);
 		void FindGoodLinesAndColumns(RCMap &, std::vector<int> & good_lines, std::vector<int> & good_cols);
+		void LogConnectivity(RCMap &);
 };
 
 class HallwayGenerator {
