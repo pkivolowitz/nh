@@ -252,6 +252,9 @@ void Level::AddHallways() {
 	LEAVING();
 }
 
+/*	LogConnectivity() - will log the connectivity status of each room in an RCMap.
+*/
+
 void Level::LogConnectivity(RCMap & rcm) {
 	if (_Log.is_open()) {
 		_Log << "Connectivity Report: " << rcm.size() << " rooms." << endl;
