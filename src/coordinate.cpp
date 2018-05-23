@@ -15,6 +15,10 @@ Coordinate Coordinate::operator+(const Coordinate & rhs) {
 	return Coordinate(this->l + rhs.l, this->c + rhs.c); 
 }
 
+/*	NOTE NOTE NOTE - there is a big potential for bug here. Imagine an L shaped room,
+	for instance. The centroid is NOT inside the room.
+*/
+
 Coordinate Coordinate::Centroid(const Coordinate & a, const Coordinate & b) {
 	return Coordinate((a.l + b.l) / 2, (a.c + b.c) / 2);
 }
