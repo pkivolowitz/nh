@@ -176,12 +176,14 @@ void Level::EastWest(int starting_column, int ending_column, int line) {
 	for (int c = starting_column; c <= ending_column; c++) {
 		CellPtr cp = cells.at(Offset(line, c));
 
-		if (cp->BT() == BaseType::FLOOR)
+		if (cp->BT() == BaseType::FLOOR || cp->BT() == BaseType::HALLWAY)
 			continue;
 		if (cp->BT() == BaseType::ROCK && Border::IsBadForEastWest(cp->Symbol()))
 			continue;
-
-		Replace(line, c, new Hallway());
+		bool make_door = Border::IsNorthSouth(cp->Symbol());
+		Replace(line, c, cp = new Hallway());
+		if (make_door)
+			cp->SetDoor((rand() % 2) ? DOOR_OPEN : DOOR_CLOSED);	
 	}
 }
 
@@ -193,12 +195,15 @@ void Level::NorthSouth(int starting_line, int ending_line, int column) {
 	}
 	for (int l = starting_line; l <= ending_line; l++) {
 		CellPtr cp = cells.at(Offset(l, column));
-		if (cp->BT() == BaseType::FLOOR)
+		if (cp->BT() == BaseType::FLOOR || cp->BT() == BaseType::HALLWAY)
 			continue;
 		if (cp->BT() == BaseType::ROCK && Border::IsBadForNorthSouth(cp->Symbol()))
 			continue;
 
-		Replace(l, column, new Hallway());
+		bool make_door = Border::IsEastWest(cp->Symbol());
+		Replace(l, column, cp = new Hallway());
+		if (make_door)
+			cp->SetDoor((rand() % 2) ? DOOR_OPEN : DOOR_CLOSED);	
 	}	
 }
 
@@ -250,6 +255,22 @@ void Level::AddHallways() {
 			Manhatan(corners.at(c), corners.at(c+1));
 		}
 	}
+	for (int l = 1; l < lines - 1; l++)
+		for (int c = 1; c < cols - 1; c++) {
+			if ((cells.at(Offset(l, c))->BT() == BaseType::HALLWAY &&
+				cells.at(Offset(l + 1, c))->BT() == BaseType::HALLWAY &&
+				cells.at(Offset(l + 1, c + 1))->BT() == BaseType::HALLWAY &&
+				cells.at(Offset(l, c + 1))->BT() == BaseType::HALLWAY) ||
+				(cells.at(Offset(l, c))->BT() == BaseType::HALLWAY &&
+				cells.at(Offset(l - 1, c))->BT() == BaseType::HALLWAY &&
+				cells.at(Offset(l - 1, c - 1))->BT() == BaseType::HALLWAY &&
+				cells.at(Offset(l, c - 1))->BT() == BaseType::HALLWAY)) 
+			{
+				if (rand() % 5 == 0)
+					Replace(l, c, new Rock());
+			}
+			
+		}
 }
 
 void Level::Render(Presentation * p) {
@@ -369,8 +390,13 @@ Cell::~Cell() {
 
 chtype Cell::Symbol() {
 	chtype retval = fl.Top();
-	if (retval == '\0')
+	if (retval == '\0') {
 		retval = base_type_symbols[(int) bt];
+		if (flags.door == DOOR_CLOSED)
+			retval = '+';
+		else if (flags.door == DOOR_OPEN)
+			retval = '-';
+	}
 	return retval;
 }
 
@@ -395,6 +421,9 @@ void Cell::SetVisibility(bool f) {
 	flags.is_visible = f;
 }
 
+void Cell::SetSymbol(chtype c) {
+	symbol = c;
+}
 // - Rock ------------------------------------------------------------------- //
 
 Rock::Rock() {
@@ -403,13 +432,10 @@ Rock::Rock() {
 	symbol = ' ';
 }
 
-void Rock::SetSymbol(chtype c) {
-	symbol = c;
-}
-
 chtype Rock::Symbol() {
 	return symbol;
 }
+
 Rock::~Rock() {
 	//ENTERING();
 }

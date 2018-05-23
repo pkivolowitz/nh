@@ -45,12 +45,16 @@ class Cell {
 		bool IsVisible();
 		void SetVisibility(bool);
 		BaseType BT();
-
+		void SetSymbol(chtype c);
+		bool IsDoor() { return flags.door > 0; }
+		void SetDoor(int v) { flags.door = v; }
+		
 	protected:
 		CellFlags flags;
 		FloorManager fl;
 		BaseType bt;
 		static const chtype base_type_symbols[3];
+		chtype symbol;
 };
 
 typedef Cell * CellPtr;
@@ -62,10 +66,6 @@ public:
 	Rock();
 	virtual ~Rock();
 	chtype Symbol();
-	void SetSymbol(chtype c);
-
-private:
-	chtype symbol;
 };
 
 typedef Rock * RockPtr;

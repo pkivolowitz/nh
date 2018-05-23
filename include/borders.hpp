@@ -20,4 +20,6 @@ class Border {
 		static bool IsCorner(chtype);
 		static bool IsBadForEastWest(chtype);
 		static bool IsBadForNorthSouth(chtype);
+		static bool IsEastWest(chtype c) { return c == ACS_HLINE; }
+		static bool IsNorthSouth(chtype c) { return c == ACS_VLINE; }
 };
