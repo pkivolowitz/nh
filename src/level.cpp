@@ -260,6 +260,12 @@ void Level::LogConnectivity(RCMap & rcm) {
 		}
 	}
 }
+
+/*	FindGoodLinesAndColumns() - I don't want hallways to pass along / through the exterior walls
+	of rooms. This function eliminates tops, lefts, rights and bottoms. For compound rooms, 
+	other walls can still be hit. This is handled elsewhere.
+*/
+
 void Level::FindGoodLinesAndColumns(RCMap & rcm, std::vector<int> & good_lines, std::vector<int> & good_cols) {
 	set<int> templ;
 	set<int> tempc;
