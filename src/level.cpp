@@ -202,18 +202,44 @@ void Level::AddHallwaysBetweenRooms(RCMap & rcm) {
 	}
 }
 
+/*	good_lines and good_cols are ones which have no values in common with the
+	edges of rooms. In this way, I am guaranteed of avoiding a hallway that 
+	runs down the edge of a wall (undesirable).
+*/
+
 void Level::AddHallways() {
 	RCMap rcm = CharacterizeRooms();
 	LOGMESSAGE("rcmap size: " << rcm.size());
-	set<int> bad_rows;
-	set<int> bad_cols;
+	vector<int> good_lines;
+	vector<int> good_cols;
+	set<int> templ;
+	set<int> tempc;
+	for (int i = 0; i < lines; i++)
+		templ.insert(i);
+	for (int i = 0; i < cols; i++)
+		tempc.insert(i);
 	for (auto & rm : rcm) {
-		bad_rows.insert(rm.second.top_left.l);
-		bad_rows.insert(rm.second.bot_right.l);
-		bad_cols.insert(rm.second.top_left.c);
-		bad_cols.insert(rm.second.bot_right.c);
+		templ.erase(rm.second.top_left.l);
+		templ.erase(rm.second.bot_right.l);
+		tempc.insert(rm.second.top_left.c);
+		tempc.insert(rm.second.bot_right.c);
 	}
-	
+	std::copy(templ.begin(), templ.end(), std::back_inserter(good_lines));
+	std::copy(tempc.begin(), tempc.end(), std::back_inserter(good_cols));
+	for (int i = 0; i < 1; i++) {
+		vector<Coordinate> corners;
+		int number_of_corners = rand() % 8 + 2;
+		for (int c = 0; c < number_of_corners; c++) {
+			Coordinate coord;
+			coord.l = good_lines.at(rand() % good_lines.size());
+			coord.c = good_cols.at(rand() % good_cols.size());
+			corners.push_back(coord);
+		}
+		// corners is now peopled by "good" corners.
+		for (unsigned int c = 0; c < corners.size() - 1; c++) {
+
+		}
+	}
 	AddHallwaysBetweenRooms(rcm);
 }
 
