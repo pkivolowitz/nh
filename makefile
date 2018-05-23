@@ -22,6 +22,6 @@ pnh: $(objs)
 
 # $(RM) is rm -f by default
 clean:
-	$(RM) $(objs) $(deps) pnh
+	$(RM) $(objs) $(deps) pnh core
 
 -include $(deps)
