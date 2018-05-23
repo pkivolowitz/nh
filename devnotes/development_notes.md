@@ -68,3 +68,11 @@ Check out this amazing screen shot:
 * Wrote means of "characterizing" rooms in preparation for hallway generation.
 * Described current plan for hallway generating algorithm.
 
+# 5/23/2018 - 01
+
+A lot of development has been done without making entries here. This image
+depicts the current state of level development. More to come such as adding
+jinks and ensuring all rooms are connected.
+
+![yet another awesome screenshot](./pnh_052318_01.png "Everything that can be rendered as of this moment.")
+
