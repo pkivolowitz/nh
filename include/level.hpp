@@ -48,7 +48,7 @@ class Cell {
 		void SetSymbol(chtype c);
 		bool IsDoor() { return flags.door > 0; }
 		void SetDoor(int v) { flags.door = v; }
-		
+
 	protected:
 		CellFlags flags;
 		FloorManager fl;
@@ -144,11 +144,13 @@ class Level {
 		void AddDoors();
 		void AddJinks();
 		void Manhatan(Coordinate &, Coordinate &, RCMap &);
-		void EastWest(int, int, int, RCMap &);
-		void NorthSouth(int, int, int, RCMap &);
+		void NSEW(int s, int e, int fixed_value, RCMap & rcm, bool is_ew);
+	
 		void MakeCorners(std::vector<Coordinate> &, std::vector<int> &, std::vector<int> &);
 		void FindGoodLinesAndColumns(RCMap &, std::vector<int> & good_lines, std::vector<int> & good_cols);
 		void LogConnectivity(RCMap &);
+		int FindFirstDisconnectedRoom(RCMap &);
+		Coordinate FindClosestHallway(Coordinate &);
 };
 
 class HallwayGenerator {

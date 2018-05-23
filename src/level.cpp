@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <cassert>
 #include <cstdlib>
+#include <cmath>
 
 #include "level.hpp"
 #include "logging.hpp"
@@ -167,14 +168,14 @@ Level::RCMap Level::CharacterizeRooms() {
 	return rcmap;
 }
 
-void Level::EastWest(int starting_column, int ending_column, int line, RCMap & rcm) {
-	if (starting_column > ending_column) {
-		int t = starting_column;
-		starting_column = ending_column;
-		ending_column = t;
+void Level::NSEW(int s, int e, int fixed_value, RCMap & rcm, bool is_ew) {
+	if (s > e) {
+		int t = s;
+		s = e;
+		e = t;
 	}
-	for (int c = starting_column; c <= ending_column; c++) {
-		CellPtr cp = cells.at(Offset(line, c));
+	for (int c = s; c <= e; c++) {
+		CellPtr cp = ((is_ew) ? cells.at(Offset(fixed_value, c)) : cells.at(Offset(c, fixed_value)));
 		if (cp->BT() == BaseType::FLOOR) {
 			FloorPtr fp = (FloorPtr) cp;
 			rcm[fp->GetRoomNumber()].connected =true;
@@ -182,34 +183,16 @@ void Level::EastWest(int starting_column, int ending_column, int line, RCMap & r
 		}	
 		if (cp->BT() == BaseType::HALLWAY)
 			continue;
-		if (cp->BT() == BaseType::ROCK && Border::IsBadForEastWest(cp->Symbol()))
+		if (cp->BT() == BaseType::ROCK && (is_ew ? Border::IsBadForEastWest(cp->Symbol()) : Border::IsBadForNorthSouth(cp->Symbol())))
 			continue;
-		bool make_door = Border::IsNorthSouth(cp->Symbol());
-		Replace(line, c, cp = new Hallway());
-		if (make_door)
-			cp->SetDoor((rand() % 2) ? DOOR_OPEN : DOOR_CLOSED);	
-	}
-}
-
-void Level::NorthSouth(int starting_line, int ending_line, int column, RCMap & rcm) {
-	if (starting_line > ending_line) {
-		int t = starting_line;
-		starting_line = ending_line;
-		ending_line = t;
-	}
-	for (int l = starting_line; l <= ending_line; l++) {
-		CellPtr cp = cells.at(Offset(l, column));
-		if (cp->BT() == BaseType::FLOOR) {
-			FloorPtr fp = (FloorPtr) cp;
-			rcm[fp->GetRoomNumber()].connected =true;
-			continue;
-		}	
-		if (cp->BT() == BaseType::HALLWAY)
-			continue;
-		if (cp->BT() == BaseType::ROCK && Border::IsBadForNorthSouth(cp->Symbol()))
-			continue;
-		bool make_door = Border::IsEastWest(cp->Symbol());
-		Replace(l, column, cp = new Hallway());
+		bool make_door;
+		if (is_ew) {
+			make_door = Border::IsNorthSouth(cp->Symbol());
+			Replace(fixed_value, c, cp = new Hallway());
+		} else {
+			make_door = Border::IsEastWest(cp->Symbol());
+			Replace(c, fixed_value, cp = new Hallway());			
+		}
 		if (make_door)
 			cp->SetDoor((rand() % 2) ? DOOR_OPEN : DOOR_CLOSED);	
 	}	
@@ -217,11 +200,11 @@ void Level::NorthSouth(int starting_line, int ending_line, int column, RCMap & r
 
 void Level::Manhatan(Coordinate & c1, Coordinate & c2, RCMap & rcm) {
 	if (rand() % 2) {
-		EastWest(c1.c, c2.c, c1.l, rcm);
-		NorthSouth(c1.l, c2.l, c2.c, rcm);
+		NSEW(c1.c, c2.c, c1.l, rcm, true);
+		NSEW(c1.l, c2.l, c2.c, rcm, false);
 	} else {
-		EastWest(c1.c, c2.c, c2.l, rcm);
-		NorthSouth(c1.l, c2.l, c1.c, rcm);
+		NSEW(c1.c, c2.c, c2.l, rcm, true);
+		NSEW(c1.l, c2.l, c1.c, rcm, false);
 	} 
 }
 
@@ -237,21 +220,60 @@ void Level::AddHallways() {
 	vector<int> good_cols;
 	FindGoodLinesAndColumns(rcm, good_lines, good_cols);
 	vector<Coordinate> corners;
-	while (true) {
-		MakeCorners(corners, good_lines, good_cols);
-		for (unsigned int c = 0; c < corners.size() - 1; c++) {
-			Manhatan(corners.at(c), corners.at(c+1), rcm);
-		}
-		//LEFT OFF HERE - ABOUT TO TAKE INTO ACCOUNT DISCONNECTED ROOMS.
-		LogConnectivity(rcm);
-		corners.clear();
-		break;
+	MakeCorners(corners, good_lines, good_cols);
+	for (unsigned int c = 0; c < corners.size() - 1; c++) {
+		Manhatan(corners.at(c), corners.at(c+1), rcm);
 	}
+	while (true) {
+		int room_number = FindFirstDisconnectedRoom(rcm);
+		if (room_number < 0)
+			break;
+		Coordinate closest_hallway = FindClosestHallway(rcm[room_number].centroid);
+		Manhatan(rcm[room_number].centroid, closest_hallway, rcm);
+		LogConnectivity(rcm);
+	}
+	// There is an infinite loop almost certainly caused by the problem I identified of using centroid.
+	// I can fix this with another data structure. A multimap so I can select any floor spot within a
+	// specific room.
 	AddJinks();
 	AddDoors();
 	LEAVING();
 }
 
+static float Distance(Coordinate & a, Coordinate & b) {
+	float x = float(a.c - b.c);
+	float y = float(a.l - b.l);
+	return sqrtf(x * x + y * y);
+}
+
+Coordinate Level::FindClosestHallway(Coordinate & a) {
+	/*	This is brute force - the saving grace is the small board size. */
+	Coordinate retval;
+	float distance = 9999999.0;
+	for (int l = 0; l < lines; l++) {
+		for (int c = 0; c < cols; c++) {
+			Coordinate b(l, c);
+			if (cells.at(Offset(l, c))->BT() == BaseType::HALLWAY) {
+				if (Distance(a, b) < distance) {
+					retval = b;
+					distance = Distance(a, b);
+				}
+			}
+		}
+	}
+	return retval;
+}
+
+int Level::FindFirstDisconnectedRoom(RCMap & rcm) {
+	int retval = -1;
+	for (auto & rc : rcm) {
+		if (!rc.second.connected) {
+			retval = rc.first;
+			break;
+		}
+	}
+	return retval;
+}
 /*	LogConnectivity() - will log the connectivity status of each room in an RCMap.
 */
 
@@ -478,6 +500,7 @@ void Cell::SetVisibility(bool f) {
 void Cell::SetSymbol(chtype c) {
 	symbol = c;
 }
+
 // - Rock ------------------------------------------------------------------- //
 
 Rock::Rock() {
