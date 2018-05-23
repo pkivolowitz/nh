@@ -130,18 +130,22 @@ class Level {
 		static const int MAX_ROOM_HEIGHT_RAND = 5;
 
 		struct RoomCharacterization {
+			RoomCharacterization() { connected = false; }
 			Coordinate top_left;
 			Coordinate bot_right;
 			Coordinate centroid;
+			bool connected;
 		};
 
 		typedef std::map<int, RoomCharacterization> RCMap;
 
 		RCMap CharacterizeRooms();
 		void AddHallways();
-		void Manhatan(Coordinate &, Coordinate &);
-		void EastWest(int, int, int);
-		void NorthSouth(int, int, int);
+		void AddDoors();
+		void AddJinks();
+		void Manhatan(Coordinate &, Coordinate &, RCMap &);
+		void EastWest(int, int, int, RCMap &);
+		void NorthSouth(int, int, int, RCMap &);
 };
 
 class HallwayGenerator {

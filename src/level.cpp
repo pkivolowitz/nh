@@ -167,7 +167,7 @@ Level::RCMap Level::CharacterizeRooms() {
 	return rcmap;
 }
 
-void Level::EastWest(int starting_column, int ending_column, int line) {
+void Level::EastWest(int starting_column, int ending_column, int line, RCMap & rcm) {
 	if (starting_column > ending_column) {
 		int t = starting_column;
 		starting_column = ending_column;
@@ -175,8 +175,12 @@ void Level::EastWest(int starting_column, int ending_column, int line) {
 	}
 	for (int c = starting_column; c <= ending_column; c++) {
 		CellPtr cp = cells.at(Offset(line, c));
-
-		if (cp->BT() == BaseType::FLOOR || cp->BT() == BaseType::HALLWAY)
+		if (cp->BT() == BaseType::FLOOR) {
+			FloorPtr fp = (FloorPtr) cp;
+			rcm[fp->GetRoomNumber()].connected =true;
+			continue;
+		}	
+		if (cp->BT() == BaseType::HALLWAY)
 			continue;
 		if (cp->BT() == BaseType::ROCK && Border::IsBadForEastWest(cp->Symbol()))
 			continue;
@@ -187,7 +191,7 @@ void Level::EastWest(int starting_column, int ending_column, int line) {
 	}
 }
 
-void Level::NorthSouth(int starting_line, int ending_line, int column) {
+void Level::NorthSouth(int starting_line, int ending_line, int column, RCMap & rcm) {
 	if (starting_line > ending_line) {
 		int t = starting_line;
 		starting_line = ending_line;
@@ -195,11 +199,15 @@ void Level::NorthSouth(int starting_line, int ending_line, int column) {
 	}
 	for (int l = starting_line; l <= ending_line; l++) {
 		CellPtr cp = cells.at(Offset(l, column));
-		if (cp->BT() == BaseType::FLOOR || cp->BT() == BaseType::HALLWAY)
+		if (cp->BT() == BaseType::FLOOR) {
+			FloorPtr fp = (FloorPtr) cp;
+			rcm[fp->GetRoomNumber()].connected =true;
+			continue;
+		}	
+		if (cp->BT() == BaseType::HALLWAY)
 			continue;
 		if (cp->BT() == BaseType::ROCK && Border::IsBadForNorthSouth(cp->Symbol()))
 			continue;
-
 		bool make_door = Border::IsEastWest(cp->Symbol());
 		Replace(l, column, cp = new Hallway());
 		if (make_door)
@@ -207,13 +215,13 @@ void Level::NorthSouth(int starting_line, int ending_line, int column) {
 	}	
 }
 
-void Level::Manhatan(Coordinate & c1, Coordinate & c2) {
+void Level::Manhatan(Coordinate & c1, Coordinate & c2, RCMap & rcm) {
 	if (rand() % 2) {
-		EastWest(c1.c, c2.c, c1.l);
-		NorthSouth(c1.l, c2.l, c2.c);
+		EastWest(c1.c, c2.c, c1.l, rcm);
+		NorthSouth(c1.l, c2.l, c2.c, rcm);
 	} else {
-		EastWest(c1.c, c2.c, c2.l);	
-		NorthSouth(c1.l, c2.l, c1.c);
+		EastWest(c1.c, c2.c, c2.l, rcm);
+		NorthSouth(c1.l, c2.l, c1.c, rcm);
 	} 
 }
 
@@ -229,19 +237,22 @@ void Level::AddHallways() {
 	vector<int> good_cols;
 	set<int> templ;
 	set<int> tempc;
+	// First create sets with all possible rows and columns.
 	for (int i = 1; i < lines - 1; i++)
 		templ.insert(i);
 	for (int i = 1; i < cols - 1; i++)
 		tempc.insert(i);
+	// Now, remove rows that collide with horizontal walls and columns that collide with vertical walls.
 	for (auto & rm : rcm) {
 		templ.erase(rm.second.top_left.l - 1);
 		templ.erase(rm.second.bot_right.l + 1);
 		tempc.insert(rm.second.top_left.c - 1);
 		tempc.insert(rm.second.bot_right.c + 1);
 	}
+	// Convert the sets of what remains into vectors permitting easy random choices of just the right values.
 	std::copy(templ.begin(), templ.end(), std::back_inserter(good_lines));
 	std::copy(tempc.begin(), tempc.end(), std::back_inserter(good_cols));
-	for (int i = 0; i < 2; i++) {
+	while (true) {
 		vector<Coordinate> corners;
 		int number_of_corners = (rand() % 8) + 4;
 		for (int c = 0; c < number_of_corners; c++) {
@@ -252,9 +263,20 @@ void Level::AddHallways() {
 		}
 		// corners is now peopled by "good" corners.
 		for (unsigned int c = 0; c < corners.size() - 1; c++) {
-			Manhatan(corners.at(c), corners.at(c+1));
+			Manhatan(corners.at(c), corners.at(c+1), rcm);
 		}
+		//LEFT OFF HERE - ABOUT TO TAKE INTO ACCOUNT DISCONNECTED ROOMS.
+		break;
 	}
+	AddJinks();
+	AddDoors();
+}
+
+void Level::AddJinks() {
+
+}
+
+void Level::AddDoors() {
 	for (int l = 1; l < lines - 1; l++)
 		for (int c = 1; c < cols - 1; c++) {
 			if ((cells.at(Offset(l, c))->BT() == BaseType::HALLWAY &&
@@ -281,7 +303,6 @@ void Level::Render(Presentation * p) {
 			CellPtr cp = cells.at(Offset(l, c));
 			//chtype s = (cp->IsVisible()) ? ACS_VLINE : ' ';
 			chtype s = (cp->IsVisible()) ? cp->Symbol() : ' ';
-
 			if (cp->BT() == BaseType::FLOOR)
 				s = (chtype) (((Floor *) cp)->GetRoomNumber() + '0');
 			p->AddCh(s);
@@ -289,6 +310,8 @@ void Level::Render(Presentation * p) {
 	}
 }
 
+/*	This is a stub.
+*/
 void Level::CalculateVisibility() {
 	for (int l = 0; l < lines; l++) {
 		for (int c = 0; c < cols; c++) {
