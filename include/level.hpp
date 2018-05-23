@@ -139,7 +139,9 @@ class Level {
 
 		RCMap CharacterizeRooms();
 		void AddHallways();
-		void AddHallwaysBetweenRooms(RCMap & rcm);
+		void Manhatan(Coordinate &, Coordinate &);
+		void EastWest(int, int, int);
+		void NorthSouth(int, int, int);
 };
 
 class HallwayGenerator {

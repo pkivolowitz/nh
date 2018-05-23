@@ -167,39 +167,49 @@ Level::RCMap Level::CharacterizeRooms() {
 	return rcmap;
 }
 
-void Level::AddHallwaysBetweenRooms(RCMap & rcm) {
-	multimap<int, int> reachability;
-	unordered_set<int> unreachable;
-
-	if (rcm.size() > 1) {
-		for (auto & it : rcm) {
-			unreachable.insert(it.first);
-		}
-		// unreachable now has a list of 
-		//
-		//multimap<int, int> reachable;
-		//while (connections.size() != rcm.size()) {
-			/* 
-			This code is bad:
-			int room_a = rand() % rcm.size();
-			int room_b = room_a;
-			while (room_a == room_b)
-				room_b = rand() % rcm.size();
-			*/
-			/* 	The strategy:
-				Select two previously unconnected (to each other) rooms.
-				Add reachability info about the two rooms being reachable to each other.
-				Choose exit points in both rooms (leverage centroids).
-				Depending upon distance between exit points, pick number of kinks.
-				Define elbows.
-				Iterate Manhattan path:
-					If a new room is crossed, update reachability
-
-				The loop should stop when the size of reachable is 1 and
-				size of that 1 is same as size of rcm.
-			*/
-		//}
+void Level::EastWest(int starting_column, int ending_column, int line) {
+	if (starting_column > ending_column) {
+		int t = starting_column;
+		starting_column = ending_column;
+		ending_column = t;
 	}
+	for (int c = starting_column; c <= ending_column; c++) {
+		CellPtr cp = cells.at(Offset(line, c));
+
+		if (cp->BT() == BaseType::FLOOR)
+			continue;
+		if (cp->BT() == BaseType::ROCK && Border::IsBadForEastWest(cp->Symbol()))
+			continue;
+
+		Replace(line, c, new Hallway());
+	}
+}
+
+void Level::NorthSouth(int starting_line, int ending_line, int column) {
+	if (starting_line > ending_line) {
+		int t = starting_line;
+		starting_line = ending_line;
+		ending_line = t;
+	}
+	for (int l = starting_line; l <= ending_line; l++) {
+		CellPtr cp = cells.at(Offset(l, column));
+		if (cp->BT() == BaseType::FLOOR)
+			continue;
+		if (cp->BT() == BaseType::ROCK && Border::IsBadForNorthSouth(cp->Symbol()))
+			continue;
+
+		Replace(l, column, new Hallway());
+	}	
+}
+
+void Level::Manhatan(Coordinate & c1, Coordinate & c2) {
+	if (rand() % 2) {
+		EastWest(c1.c, c2.c, c1.l);
+		NorthSouth(c1.l, c2.l, c2.c);
+	} else {
+		EastWest(c1.c, c2.c, c2.l);	
+		NorthSouth(c1.l, c2.l, c1.c);
+	} 
 }
 
 /*	good_lines and good_cols are ones which have no values in common with the
@@ -214,21 +224,21 @@ void Level::AddHallways() {
 	vector<int> good_cols;
 	set<int> templ;
 	set<int> tempc;
-	for (int i = 0; i < lines; i++)
+	for (int i = 1; i < lines - 1; i++)
 		templ.insert(i);
-	for (int i = 0; i < cols; i++)
+	for (int i = 1; i < cols - 1; i++)
 		tempc.insert(i);
 	for (auto & rm : rcm) {
-		templ.erase(rm.second.top_left.l);
-		templ.erase(rm.second.bot_right.l);
-		tempc.insert(rm.second.top_left.c);
-		tempc.insert(rm.second.bot_right.c);
+		templ.erase(rm.second.top_left.l - 1);
+		templ.erase(rm.second.bot_right.l + 1);
+		tempc.insert(rm.second.top_left.c - 1);
+		tempc.insert(rm.second.bot_right.c + 1);
 	}
 	std::copy(templ.begin(), templ.end(), std::back_inserter(good_lines));
 	std::copy(tempc.begin(), tempc.end(), std::back_inserter(good_cols));
-	for (int i = 0; i < 1; i++) {
+	for (int i = 0; i < 2; i++) {
 		vector<Coordinate> corners;
-		int number_of_corners = rand() % 8 + 2;
+		int number_of_corners = (rand() % 8) + 4;
 		for (int c = 0; c < number_of_corners; c++) {
 			Coordinate coord;
 			coord.l = good_lines.at(rand() % good_lines.size());
@@ -237,10 +247,9 @@ void Level::AddHallways() {
 		}
 		// corners is now peopled by "good" corners.
 		for (unsigned int c = 0; c < corners.size() - 1; c++) {
-
+			Manhatan(corners.at(c), corners.at(c+1));
 		}
 	}
-	AddHallwaysBetweenRooms(rcm);
 }
 
 void Level::Render(Presentation * p) {

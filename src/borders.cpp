@@ -6,6 +6,22 @@ using namespace std;
 
 map<BorderFlags, chtype> Border::alt_charmap;
 
+bool Border::IsCorner(chtype c) {
+	return 
+		(c == ACS_ULCORNER) || (c == ACS_URCORNER) ||
+		(c == ACS_LLCORNER) || (c == ACS_LRCORNER) ||
+		(c == ACS_RTEE) || (c == ACS_LTEE) ||
+		(c == ACS_TTEE) || (c == ACS_BTEE);
+}
+
+bool Border::IsBadForEastWest(chtype c) {
+	return IsCorner(c) || (c == ACS_HLINE);
+}
+
+bool Border::IsBadForNorthSouth(chtype c) {
+	return IsCorner(c) || (c == ACS_VLINE);
+}
+
 Border::Border() {
 	if (alt_charmap.size() == 0) {
 		

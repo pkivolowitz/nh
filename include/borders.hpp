@@ -17,4 +17,7 @@ class Border {
 	public:
 		Border();
 		static std::map<BorderFlags, chtype> alt_charmap;
+		static bool IsCorner(chtype);
+		static bool IsBadForEastWest(chtype);
+		static bool IsBadForNorthSouth(chtype);
 };
