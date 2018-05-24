@@ -151,6 +151,7 @@ class Level {
 		void LogConnectivity(RCMap &);
 		int FindFirstDisconnectedRoom(RCMap &);
 		Coordinate FindClosestHallway(Coordinate &);
+		void BuildSquareMap(std::map<int, std::vector<Coordinate>> & squares_by_room);
 };
 
 class HallwayGenerator {

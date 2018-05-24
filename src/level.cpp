@@ -183,8 +183,14 @@ void Level::NSEW(int s, int e, int fixed_value, RCMap & rcm, bool is_ew) {
 		}	
 		if (cp->BT() == BaseType::HALLWAY)
 			continue;
-		if (cp->BT() == BaseType::ROCK && (is_ew ? Border::IsBadForEastWest(cp->Symbol()) : Border::IsBadForNorthSouth(cp->Symbol())))
-			continue;
+
+		// THERE ARE PROBLEMS RIGHT HERE.
+
+		if (cp->BT() == BaseType::ROCK && (is_ew ? Border::IsBadForEastWest(cp->Symbol()) : Border::IsBadForNorthSouth(cp->Symbol()))) {
+			//continue;
+			fixed_value++;
+			cp = ((is_ew) ? cells.at(Offset(fixed_value, c)) : cells.at(Offset(c, fixed_value)));
+		}
 		bool make_door;
 		if (is_ew) {
 			make_door = Border::IsNorthSouth(cp->Symbol());
@@ -218,6 +224,8 @@ void Level::AddHallways() {
 	LOGMESSAGE("rcmap size: " << rcm.size());
 	vector<int> good_lines;
 	vector<int> good_cols;
+	map<int, vector<Coordinate>> squares_by_room;
+	BuildSquareMap(squares_by_room);
 	FindGoodLinesAndColumns(rcm, good_lines, good_cols);
 	vector<Coordinate> corners;
 	MakeCorners(corners, good_lines, good_cols);
@@ -226,10 +234,12 @@ void Level::AddHallways() {
 	}
 	while (true) {
 		int room_number = FindFirstDisconnectedRoom(rcm);
+		LOGMESSAGE("Disconnected room: " << room_number);
 		if (room_number < 0)
 			break;
-		Coordinate closest_hallway = FindClosestHallway(rcm[room_number].centroid);
-		Manhatan(rcm[room_number].centroid, closest_hallway, rcm);
+		Coordinate starting_point = squares_by_room[room_number].at(rand() % squares_by_room[room_number].size());
+		Coordinate closest_hallway = FindClosestHallway(starting_point);
+		Manhatan(starting_point, closest_hallway, rcm);
 		LogConnectivity(rcm);
 	}
 	// There is an infinite loop almost certainly caused by the problem I identified of using centroid.
@@ -238,6 +248,18 @@ void Level::AddHallways() {
 	AddJinks();
 	AddDoors();
 	LEAVING();
+}
+
+void Level::BuildSquareMap(std::map<int, std::vector<Coordinate>> & squares_by_room) {
+	for (int l = 0; l < lines; l++) {
+		for (int c = 0; c < cols; c++) {
+			Coordinate b(l, c);
+			FloorPtr p = (FloorPtr) cells.at(Offset(l, c));
+			if (p->BT() == BaseType::FLOOR) {
+				squares_by_room[p->GetRoomNumber()].push_back(b);
+			}
+		}
+	}	
 }
 
 static float Distance(Coordinate & a, Coordinate & b) {
@@ -316,8 +338,8 @@ void Level::MakeCorners(vector<Coordinate> & corners, vector<int> & good_lines, 
 	int number_of_corners = (rand() % 8) + (filling_in ? 1 : 4);
 	for (int c = 0; c < number_of_corners; c++) {
 		Coordinate coord;
-		coord.l = good_lines.at(rand() % good_lines.size());
-		coord.c = good_cols.at(rand() % good_cols.size());
+		coord.l = good_lines.at(rand() % (good_lines.size() - 2) + 1);
+		coord.c = good_cols.at(rand() % (good_cols.size() - 2) + 1);
 		if (filling_in)
 			corners.insert(corners.end() - 1, coord);
 		else
