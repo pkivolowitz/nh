@@ -187,9 +187,9 @@ void Level::NSEW(int s, int e, int fixed_value, RCMap & rcm, bool is_ew) {
 		// THERE ARE PROBLEMS RIGHT HERE.
 
 		if (cp->BT() == BaseType::ROCK && (is_ew ? Border::IsBadForEastWest(cp->Symbol()) : Border::IsBadForNorthSouth(cp->Symbol()))) {
-			//continue;
-			fixed_value++;
-			cp = ((is_ew) ? cells.at(Offset(fixed_value, c)) : cells.at(Offset(c, fixed_value)));
+			continue;
+			//fixed_value++;
+			//cp = ((is_ew) ? cells.at(Offset(fixed_value, c)) : cells.at(Offset(c, fixed_value)));
 		}
 		bool make_door;
 		if (is_ew) {
@@ -237,14 +237,12 @@ void Level::AddHallways() {
 		LOGMESSAGE("Disconnected room: " << room_number);
 		if (room_number < 0)
 			break;
+		// NOTE NOTE NOTE - This may select a cell on a bad row or column.
 		Coordinate starting_point = squares_by_room[room_number].at(rand() % squares_by_room[room_number].size());
 		Coordinate closest_hallway = FindClosestHallway(starting_point);
 		Manhatan(starting_point, closest_hallway, rcm);
 		LogConnectivity(rcm);
 	}
-	// There is an infinite loop almost certainly caused by the problem I identified of using centroid.
-	// I can fix this with another data structure. A multimap so I can select any floor spot within a
-	// specific room.
 	AddJinks();
 	AddDoors();
 	LEAVING();
@@ -322,11 +320,22 @@ void Level::FindGoodLinesAndColumns(RCMap & rcm, std::vector<int> & good_lines, 
 	for (int i = 1; i < cols - 1; i++)
 		tempc.insert(i);
 	// Now, remove rows that collide with horizontal walls and columns that collide with vertical walls.
+	/*
 	for (auto & rm : rcm) {
 		templ.erase(rm.second.top_left.l - 1);
 		templ.erase(rm.second.bot_right.l + 1);
 		tempc.insert(rm.second.top_left.c - 1);
 		tempc.insert(rm.second.bot_right.c + 1);
+	}
+	*/
+	for (int l = 0; l < lines; l++) {
+		for (int c = 0; c < cols; c++) {
+			RockPtr p = (RockPtr) cells.at(Offset(l, c));
+			if (p->BT() == BaseType::ROCK && Border::IsCorner(p->Symbol())) {
+				templ.erase(l);
+				tempc.erase(c);
+			}
+		}
 	}
 	// Convert the sets of what remains into vectors permitting easy random choices of just the right values.
 	std::copy(templ.begin(), templ.end(), std::back_inserter(good_lines));
@@ -376,7 +385,6 @@ void Level::Render(Presentation * p) {
 		p->Move(l + p->TOP_DRAWABLE_LINE, p->LEFT_DRAWABLE_COL);
 		for (int c = 0; c < cols; c++) {
 			CellPtr cp = cells.at(Offset(l, c));
-			//chtype s = (cp->IsVisible()) ? ACS_VLINE : ' ';
 			chtype s = (cp->IsVisible()) ? cp->Symbol() : ' ';
 			if (cp->BT() == BaseType::FLOOR)
 				s = (chtype) (((Floor *) cp)->GetRoomNumber() + '0');

@@ -6,6 +6,14 @@ using namespace std;
 
 map<BorderFlags, chtype> Border::alt_charmap;
 
+bool Border::IsWall(chtype c) {
+	return (c == ACS_HLINE) || (c == ACS_VLINE);
+}
+
+bool Border::IsBorder(chtype c) {
+	return IsCorner(c) || IsWall(c);
+}
+
 bool Border::IsCorner(chtype c) {
 	return 
 		(c == ACS_ULCORNER) || (c == ACS_URCORNER) ||
