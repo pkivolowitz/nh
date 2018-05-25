@@ -3,12 +3,22 @@
 #include <string>
 #include <cstdlib>
 #include <getopt.h>
+#include <iomanip>
 #include "presentation.hpp"
 #include "game.hpp"
 #include "level.hpp"
 #include "logging.hpp"
 
 using namespace std;
+
+std::string TimeAsString() {
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
+	std::stringstream ss;
+	ss << setfill('0');
+	ss << setw(2) << tm.tm_hour << ":" << setw(2) << tm.tm_min << ":" << setw(2) << tm.tm_sec;
+	return ss.str();
+}
 
 ofstream _Log;
 
