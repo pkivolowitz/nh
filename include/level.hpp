@@ -19,6 +19,7 @@ struct CellFlags {
 	unsigned char door : 2;
 	unsigned char blocks_line_of_sight : 1;
 	unsigned char is_visible : 1;
+	unsigned char flattened : 1;
 };
 
 enum {
@@ -48,7 +49,9 @@ class Cell {
 		void SetSymbol(chtype c);
 		bool IsDoor() { return flags.door > 0; }
 		void SetDoor(int v) { flags.door = v; }
-
+		void Flatten() { flags.flattened = 1; }
+		bool IsFlattened() { return flags.flattened == 1; }
+		inline void Unflatten() { flags.flattened = 0; }
 	protected:
 		CellFlags flags;
 		FloorManager fl;
@@ -118,7 +121,7 @@ class Level {
 		void CalcRoomBoundaries(Coordinate & tl, Coordinate & br, Presentation * p);
 		void FillRoomBoundaries(Coordinate & tl, Coordinate & br, std::vector<Coordinate> & v, int room_number);
 		void FlattenRoom(std::vector<Coordinate> & v, int room_number);
-		void CheckFloor(Coordinate & c, std::vector<Coordinate> & v, int room_number);
+		void CheckFloor(int, std::vector<Coordinate> & v, int room_number);
 		void AddBorders();
 		void MakeRooms(Presentation * p);
 		BorderFlags EvaluateBorder(Coordinate & center);

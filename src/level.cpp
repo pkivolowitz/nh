@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <cmath>
+#include <signal.h>
 
 #include "level.hpp"
 #include "logging.hpp"
@@ -26,6 +27,7 @@ Level::~Level() {
 }
 
 void Level::MakeRooms(Presentation * p) {
+	//ENTERING();
 	Coordinate tl, br;
 	for (int room_number = MAX_ROOMS; room_number >= 0; room_number--) {
 		vector<Coordinate> v;
@@ -35,6 +37,7 @@ void Level::MakeRooms(Presentation * p) {
 			continue;
 		FlattenRoom(v, room_number);
 	}
+	//LEAVING();
 }
 
 bool Level::Initialize(Presentation * p) {
@@ -61,11 +64,13 @@ bool Level::Initialize(Presentation * p) {
 void Level::FlattenRoom(vector<Coordinate> & v, int room_number) {
 	//ENTERING();
 	unsigned int index = 0;
+	for (auto & p : cells)
+		p->Unflatten();
 	while (index < v.size()) {
-		CheckFloor(v.at(index), v, room_number);
+		CheckFloor(index, v, room_number);
 		index++;
 	}
-	//LEAVING();
+	//LOGMESSAGE("index: " << index);
 }
 
 /*	CheckFloor - Like a convolution kernel, this function checks a cell's 8 neighbors
@@ -73,24 +78,34 @@ void Level::FlattenRoom(vector<Coordinate> & v, int room_number) {
 	current room. Rooms are defined in decreasing order so that this makes sense. The
 	algorithm isn't optimal, but with small arrays (24x80) this is irrelevant.
 */
-void Level::CheckFloor(Coordinate & center, vector<Coordinate> & v, int room_number) {
+void Level::CheckFloor(int index, vector<Coordinate> & v, int room_number) {
 	//ENTERING();
+	Coordinate center = v.at(index);
+	int loop_counter = 0;
 	for (int l = center.l - 1; l <= center.l + 1; l++) {
 		if (l < 0 || l >= lines)
 			continue;
 		for (int c = center.c - 1; c <= center.c + 1; c++) {
+			loop_counter++;
+			if (loop_counter > 9)
+				raise(SIGINT);
+
 			if (c < 0 || c >= cols)
 				continue;
 			if (c == center.c && l == center.l)
 				continue;
 			Floor * cp = (Floor *) cells.at(Offset(l, c));
+			if (cp->IsFlattened()) {
+				continue;
+			}
 			if (cp->BT() == BaseType::FLOOR && cp->GetRoomNumber() > room_number) {
+				cp->Flatten();
 				cp->SetRoomNumber(room_number);
 				v.push_back(Coordinate(l, c));
 			}
 		}
 	}
-	//LEAVING();
+	//LOGMESSAGE("returning loop counter was: " << loop_counter);
 }
 
 /*	FillRoomBoundaries - fills each cell with a Floor within the rectangle specified by tl and br.
@@ -101,6 +116,7 @@ void Level::FillRoomBoundaries(Coordinate & tl, Coordinate & br, vector<Coordina
 	//ENTERING();
 	for (int l = tl.l; l <= br.l; l++) {
 		for (int c = tl.c; c <= br.c; c++) {
+			assert(l < lines && c < cols);
 			v.push_back(Coordinate(l, c));
 			Replace(l, c, new Floor(room_number));
 		}
@@ -117,16 +133,20 @@ void Level::CalcRoomBoundaries(Coordinate & tl, Coordinate & br, Presentation * 
 }
 
 void Level::Replace(int l, int c, CellPtr cell) {
-	//LOGMESSAGE("line: " << l << " col: " << c);
+	//ENTERING();
 	int o = Offset(l, c);
 	if (cells.at(o) != nullptr) {
 		delete cells.at(o);
 	}
 	cells.at(o) = cell;
+	//LEAVING();
 }
 
 int Level::Offset(int l, int c) {
-	return l * cols + c;
+	int o = l * cols + c;
+	assert(o >= 0);
+	assert(o < lines * cols);
+	return o;
 }
 
 int Level::Offset(Coordinate c) {
@@ -169,12 +189,21 @@ Level::RCMap Level::CharacterizeRooms() {
 }
 
 void Level::NSEW(int s, int e, int fixed_value, RCMap & rcm, bool is_ew) {
+	//ENTERING();
 	if (s > e) {
 		int t = s;
 		s = e;
 		e = t;
 	}
+	assert(s <= e);
+	int loop_counter = 0;
+
 	for (int c = s; c <= e; c++) {
+		//LOGMESSAGE("Top Of Loop");
+		if (++loop_counter > 1000) {
+			LOGMESSAGE("INFINITE LOOP SHORT CIRCUITED");
+			raise(SIGINT);
+		}
 		CellPtr cp = ((is_ew) ? cells.at(Offset(fixed_value, c)) : cells.at(Offset(c, fixed_value)));
 		if (cp->BT() == BaseType::FLOOR) {
 			FloorPtr fp = (FloorPtr) cp;
@@ -182,15 +211,24 @@ void Level::NSEW(int s, int e, int fixed_value, RCMap & rcm, bool is_ew) {
 			continue;
 		}	
 		if (cp->BT() == BaseType::HALLWAY)
-			continue;
-
-		// THERE ARE PROBLEMS RIGHT HERE.
-
+			continue;	
 		if (cp->BT() == BaseType::ROCK && (is_ew ? Border::IsBadForEastWest(cp->Symbol()) : Border::IsBadForNorthSouth(cp->Symbol()))) {
-			continue;
-			//fixed_value++;
-			//cp = ((is_ew) ? cells.at(Offset(fixed_value, c)) : cells.at(Offset(c, fixed_value)));
+			//continue;
+			if (is_ew) {
+				if (fixed_value >= lines - 1)
+					continue;
+				else
+					fixed_value++;
+			} else {
+				if (fixed_value >= cols - 1)
+					continue;
+				else
+					fixed_value++;
+			}
+			c--;
+			cp = ((is_ew) ? cells.at(Offset(fixed_value, c)) : cells.at(Offset(c, fixed_value)));
 		}
+		//LOGMESSAGE("Before Door");
 		bool make_door;
 		if (is_ew) {
 			make_door = Border::IsNorthSouth(cp->Symbol());
@@ -201,17 +239,20 @@ void Level::NSEW(int s, int e, int fixed_value, RCMap & rcm, bool is_ew) {
 		}
 		if (make_door)
 			cp->SetDoor((rand() % 2) ? DOOR_OPEN : DOOR_CLOSED);	
-	}	
+	}
+	//LEAVING();	
 }
 
 void Level::Manhatan(Coordinate & c1, Coordinate & c2, RCMap & rcm) {
+	//ENTERING();
 	if (rand() % 2) {
 		NSEW(c1.c, c2.c, c1.l, rcm, true);
 		NSEW(c1.l, c2.l, c2.c, rcm, false);
 	} else {
 		NSEW(c1.c, c2.c, c2.l, rcm, true);
 		NSEW(c1.l, c2.l, c1.c, rcm, false);
-	} 
+	}
+	//LEAVING();
 }
 
 /*	good_lines and good_cols are ones which have no values in common with the
@@ -243,8 +284,8 @@ void Level::AddHallways() {
 		Manhatan(starting_point, closest_hallway, rcm);
 		LogConnectivity(rcm);
 	}
-	AddJinks();
-	AddDoors();
+	//AddJinks();
+	//AddDoors();
 	LEAVING();
 }
 
@@ -319,15 +360,6 @@ void Level::FindGoodLinesAndColumns(RCMap & rcm, std::vector<int> & good_lines, 
 		templ.insert(i);
 	for (int i = 1; i < cols - 1; i++)
 		tempc.insert(i);
-	// Now, remove rows that collide with horizontal walls and columns that collide with vertical walls.
-	/*
-	for (auto & rm : rcm) {
-		templ.erase(rm.second.top_left.l - 1);
-		templ.erase(rm.second.bot_right.l + 1);
-		tempc.insert(rm.second.top_left.c - 1);
-		tempc.insert(rm.second.bot_right.c + 1);
-	}
-	*/
 	for (int l = 0; l < lines; l++) {
 		for (int c = 0; c < cols; c++) {
 			RockPtr p = (RockPtr) cells.at(Offset(l, c));
@@ -488,6 +520,7 @@ Cell::Cell() {
 	flags.passable = false;
 	flags.door = DOOR_NOT;
 	flags.blocks_line_of_sight = true;
+	flags.flattened = 0;
 }
 
 Cell::~Cell() {
