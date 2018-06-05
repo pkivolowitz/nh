@@ -284,7 +284,7 @@ void Level::AddHallways() {
 		Manhatan(starting_point, closest_hallway, rcm);
 		LogConnectivity(rcm);
 	}
-	//AddJinks();
+	AddJinks();
 	//AddDoors();
 	LEAVING();
 }
@@ -389,7 +389,26 @@ void Level::MakeCorners(vector<Coordinate> & corners, vector<int> & good_lines, 
 }
 
 void Level::AddJinks() {
-
+	for (int l = 1; l < lines - 2; l++) {
+		int starting_l = l;
+		int run_length = 0;
+		for (int c = 1; c < cols - 2; c++) {
+			if (cells.at(Offset(l, c))->BT() == BaseType::HALLWAY &&
+				cells.at(Offset(l - 1, c))->BT() == BaseType::ROCK &&
+				cells.at(Offset(l + 1, c))->BT() == BaseType::ROCK) {
+					if (run_length == 0)
+						starting_l = l;
+					run_length++;
+			} else {
+				// Either a run just ended or one never started.
+				if (run_length < 3) {
+					run_length = 0;
+					continue;
+				}
+				// Run is three or more hallway spots so attempt to put a jink here.
+			}
+		}
+	}
 }
 
 void Level::AddDoors() {
