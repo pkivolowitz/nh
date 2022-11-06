@@ -22,11 +22,13 @@ struct CellFlags {
 	unsigned char flattened : 1;
 };
 
+/*
 enum {
 	DOOR_NOT,
 	DOOR_OPEN,
 	DOOR_CLOSED
 };
+*/
 
 enum class BaseType {
 	ROCK,
