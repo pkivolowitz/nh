@@ -229,21 +229,23 @@ void Level::NSEW(int s, int e, int fixed_value, RCMap & rcm, bool is_ew) {
 			cp = ((is_ew) ? cells.at(Offset(fixed_value, c)) : cells.at(Offset(c, fixed_value)));
 		}
 		//LOGMESSAGE("Before Door");
-		bool make_door;
+		//bool make_door;
 		if (is_ew) {
-			make_door = Border::IsNorthSouth(cp->Symbol());
+			//make_door = Border::IsNorthSouth(cp->Symbol());
 			Replace(fixed_value, c, cp = new Hallway());
 		} else {
-			make_door = Border::IsEastWest(cp->Symbol());
+			//make_door = Border::IsEastWest(cp->Symbol());
 			Replace(c, fixed_value, cp = new Hallway());			
 		}
+		/*
 		if (make_door)
-			cp->SetDoor((rand() % 2) ? DOOR_OPEN : DOOR_CLOSED);	
+			cp->SetDoor((rand() % 2) ? DOOR_OPEN : DOOR_CLOSED);
+		*/
 	}
 	//LEAVING();	
 }
 
-void Level::Manhatan(Coordinate & c1, Coordinate & c2, RCMap & rcm) {
+void Level::Manhattan(Coordinate & c1, Coordinate & c2, RCMap & rcm) {
 	//ENTERING();
 	if (rand() % 2) {
 		NSEW(c1.c, c2.c, c1.l, rcm, true);
@@ -271,7 +273,7 @@ void Level::AddHallways() {
 	vector<Coordinate> corners;
 	MakeCorners(corners, good_lines, good_cols);
 	for (unsigned int c = 0; c < corners.size() - 1; c++) {
-		Manhatan(corners.at(c), corners.at(c+1), rcm);
+		Manhattan(corners.at(c), corners.at(c+1), rcm);
 	}
 	while (true) {
 		int room_number = FindFirstDisconnectedRoom(rcm);
@@ -281,7 +283,7 @@ void Level::AddHallways() {
 		// NOTE NOTE NOTE - This may select a cell on a bad row or column.
 		Coordinate starting_point = squares_by_room[room_number].at(rand() % squares_by_room[room_number].size());
 		Coordinate closest_hallway = FindClosestHallway(starting_point);
-		Manhatan(starting_point, closest_hallway, rcm);
+		Manhattan(starting_point, closest_hallway, rcm);
 		LogConnectivity(rcm);
 	}
 	AddJinks();
@@ -390,14 +392,14 @@ void Level::MakeCorners(vector<Coordinate> & corners, vector<int> & good_lines, 
 
 void Level::AddJinks() {
 	for (int l = 1; l < lines - 2; l++) {
-		int starting_l = l;
+		//int starting_l = l;
 		int run_length = 0;
 		for (int c = 1; c < cols - 2; c++) {
 			if (cells.at(Offset(l, c))->BT() == BaseType::HALLWAY &&
 				cells.at(Offset(l - 1, c))->BT() == BaseType::ROCK &&
 				cells.at(Offset(l + 1, c))->BT() == BaseType::ROCK) {
-					if (run_length == 0)
-						starting_l = l;
+					//if (run_length == 0)
+					//	starting_l = l;
 					run_length++;
 			} else {
 				// Either a run just ended or one never started.
@@ -537,7 +539,7 @@ const chtype Cell::base_type_symbols[3] = {' ', '#', '.'};
 Cell::Cell() {
 	//ENTERING();
 	flags.passable = false;
-	flags.door = DOOR_NOT;
+	//flags.door = DOOR_NOT;
 	flags.blocks_line_of_sight = true;
 	flags.flattened = 0;
 }
@@ -550,10 +552,12 @@ chtype Cell::Symbol() {
 	chtype retval = fl.Top();
 	if (retval == '\0') {
 		retval = base_type_symbols[(int) bt];
+		/*
 		if (flags.door == DOOR_CLOSED)
 			retval = '+';
 		else if (flags.door == DOOR_OPEN)
 			retval = '-';
+		*/
 	}
 	return retval;
 }

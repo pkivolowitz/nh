@@ -16,7 +16,7 @@
 
 struct CellFlags {
 	unsigned char passable : 1;
-	unsigned char door : 2;
+	//unsigned char door : 2;
 	unsigned char blocks_line_of_sight : 1;
 	unsigned char is_visible : 1;
 	unsigned char flattened : 1;
@@ -47,8 +47,8 @@ class Cell {
 		void SetVisibility(bool);
 		BaseType BT();
 		void SetSymbol(chtype c);
-		bool IsDoor() { return flags.door > 0; }
-		void SetDoor(int v) { flags.door = v; }
+		//bool IsDoor() { return flags.door > 0; }
+		//void SetDoor(int v) { flags.door = v; }
 		void Flatten() { flags.flattened = 1; }
 		bool IsFlattened() { return flags.flattened == 1; }
 		inline void Unflatten() { flags.flattened = 0; }
@@ -146,7 +146,7 @@ class Level {
 		void AddHallways();
 		void AddDoors();
 		void AddJinks();
-		void Manhatan(Coordinate &, Coordinate &, RCMap &);
+		void Manhattan(Coordinate &, Coordinate &, RCMap &);
 		void NSEW(int s, int e, int fixed_value, RCMap & rcm, bool is_ew);
 	
 		void MakeCorners(std::vector<Coordinate> &, std::vector<int> &, std::vector<int> &);
