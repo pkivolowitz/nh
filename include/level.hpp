@@ -146,7 +146,7 @@ class Level {
 
 		RCMap CharacterizeRooms();
 		void AddHallways();
-		void AddDoors();
+		//void AddDoors();
 		void AddJinks();
 		void Manhattan(Coordinate &, Coordinate &, RCMap &);
 		void NSEW(int s, int e, int fixed_value, RCMap & rcm, bool is_ew);

@@ -413,6 +413,7 @@ void Level::AddJinks() {
 	}
 }
 
+/*
 void Level::AddDoors() {
 	for (int l = 1; l < lines - 1; l++)
 		for (int c = 1; c < cols - 1; c++) {
@@ -423,14 +424,15 @@ void Level::AddDoors() {
 				(cells.at(Offset(l, c))->BT() == BaseType::HALLWAY &&
 				cells.at(Offset(l - 1, c))->BT() == BaseType::HALLWAY &&
 				cells.at(Offset(l - 1, c - 1))->BT() == BaseType::HALLWAY &&
-				cells.at(Offset(l, c - 1))->BT() == BaseType::HALLWAY)) 
+				cells.at(Offset(l, c - 1))->BT() == BaseType::HALLWAY))
 			{
 				if (rand() % 5 == 0)
 					Replace(l, c, new Rock());
 			}
-			
+
 		}
 }
+*/
 
 void Level::Render(Presentation * p) {
 	CalculateVisibility();
