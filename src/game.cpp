@@ -82,6 +82,9 @@ void Game::EventLoop() {
 		}
 		if (UpdateClock())
 			status_needs_refresh = true;
+		if (UpdatePlayer())
+			status_needs_refresh = true;
+
 		if (status_needs_refresh || map_needs_refresh) {
 			if (map_needs_refresh) {
 				p->ClearMapArea();
@@ -120,7 +123,7 @@ bool Game::HandleQuit() {
 void Game::HandleVersion() {
 	ENTERING();
 	assert(p != nullptr);
-	string v = string("pnh - version 0.0.0 - ") + 
+	string v = string("pnh - version 0.0.1 - ") + 
 		string(__DATE__) + 
 		string(" [any key]");
 
@@ -135,7 +138,7 @@ void Game::HandleVersion() {
 
 /*	Game::UpdateClock() - this method will return true only if the text of the
 	onscreen clock has changed. This means that even if this method is called
-	multiple times per secend, the screen will be refreshed one once per 
+	multiple times per second, the screen will be refreshed one once per 
 	second (due to time). This is important because it allows the event loop
 	to sleep during relative inactivity.
 */
@@ -150,6 +153,21 @@ bool Game::UpdateClock() {
 		p->AddString(current_time, l - 1, c - 8, true); 
 	}
 	previous_time = current_time;
+	return retval;
+}
+
+bool Game::UpdatePlayer() {
+	assert(p != nullptr);
+	static string previous_player_string;
+	string current_player_string = player.to_string();
+	bool retval = current_player_string != previous_player_string;
+
+	if (retval) {
+		int l, c;
+		p->GetDimensions(l, c);
+		p->AddString(current_player_string, l - 2, 0, true);
+	}
+	previous_player_string = current_player_string;
 	return retval;
 }
 

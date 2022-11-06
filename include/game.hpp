@@ -4,6 +4,7 @@
 #include "presentation.hpp"
 #include "level.hpp"
 #include "game_time.hpp"
+#include "player.hpp"
 
 class Game {
 	public:
@@ -18,6 +19,7 @@ class Game {
 		void AddLevel();
 		void EventLoop();
 		bool UpdateClock();
+		bool UpdatePlayer();
 		void Delay(useconds_t d = 32 * 1000);
 
 		bool HandleQuit();
@@ -27,4 +29,5 @@ class Game {
 		int current_level;
 		std::vector<Level *> levels;
 		GameTime gt;
+		Player player;
 };
