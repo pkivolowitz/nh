@@ -102,8 +102,12 @@ int Presentation::GetKey() {
 	return getch();
 }
 
-void Presentation::AddCh(chtype c) {
+void Presentation::AddCh(chtype c, int attr) {
 	//LOGMESSAGE("char: " << c);
+	if (attr != A_NORMAL)
+		attrset(attr);
 	addch(c);
+	if (attr != A_NORMAL)
+		attrset(A_NORMAL);
 }
 
