@@ -110,3 +110,12 @@ stored may need to change. Currently they are stored in a single
 vector used as a 2D array. I might want to switch this up to a *map*,
 for example, where the coordinate pair is the key value. Dunno. Need
 to think about this.
+
+## 11/08/2022 - 01
+
+Completely rewrote the entire program yesterday. What I have now is
+far fewer lines and far less complicated. Have the player moving 
+around a little bit, even.
+
+![brand new code](./brandnewcode.png)
+
