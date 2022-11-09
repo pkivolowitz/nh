@@ -76,6 +76,15 @@ void Board::FindColsToAvoid(ivec &c_avoid) {
 	}
 }
 
+/*	There is a problem here in that the bad rows and bad columns
+	calculation is across the whole board. I see a situation where
+	there is no way out of a room horizontally when you look at the
+	whole board but there is if you consider only the part of the
+	board from src to dst. This means a global calculation is no
+	good and instead a region-of-interest type calculation is more
+	appropriate.
+*/
+
 /*	FindGoodCoordinates - this function goes through extra effort to
 	determine a position within the given room from which to start or
 	end a corridor. The extra work is due to wanting to be able to
@@ -103,10 +112,8 @@ void Board::FindGCoords(ivec &br, ivec &bc, Room &r, Coordinate &coord) {
 			coord.c = i;
 			break;
 		}
-		if (my_log.is_open()) {
-			my_log << "Room: " << r.room_number << " Bad Column: " << i << endl;
-		}
 	}
+
 	for (int32_t i : rows_in_room) {
 		auto it = find(br.begin(), br.end(), i);
 		if (it == br.end()) {
@@ -289,8 +296,8 @@ void Board::RemoveFloorDigits() {
 	for (int32_t r = 0; r < BOARD_ROWS; r++) {
 		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
 			if (isdigit(cells[r][c].c)) {
-				cells[r][c].display_c = cells[r][c].c = \
-					(show_floor) ? '*' : ' ';
+				cells[r][c].display_c = cells[r][c].c =
+					(show_floor) ? cells[r][c].c : ' ';
 			}
 		}
 	}
