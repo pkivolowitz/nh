@@ -226,12 +226,11 @@ void InitializeCornerMap() {
 	corner_map["FFFHHFVVF"] = ACS_URCORNER;
 	corner_map[" VFHVFFHH"] = ACS_RTEE;
 	corner_map["HVFFHHFV "] = ACS_LTEE;
-
 	corner_map["FFFFHHHHV"] = ACS_ULCORNER;
 	corner_map["FHHHHV  V"] = ACS_BTEE;
 	corner_map["FFFHHFHVF"] = ACS_URCORNER;
 	corner_map["HHFHVF VF"] = ACS_RTEE;
 
-
+	corner_map["FVFFHFFVF"] = ACS_VLINE;
 	
 }
