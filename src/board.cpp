@@ -277,6 +277,7 @@ void Board::Enclose(int32_t rn) {
 }
 
 void Board::Create() {
+	extern bool no_corridors;
 	const int32_t MIN_ROOMS = 5;
 	const int32_t MAX_ROOMS = 9;
 	int32_t room_count = RR(MIN_ROOMS, MAX_ROOMS);
@@ -287,7 +288,9 @@ void Board::Create() {
 		Enclose(rn);
 	}
 	PlaceCorners();
-	PlaceCorridors();
+	if (!no_corridors) {
+		PlaceCorridors();
+	}
 	PlaceStairs();
 	RemoveFloorDigits();
 }
