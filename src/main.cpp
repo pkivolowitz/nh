@@ -24,6 +24,7 @@ int32_t seed = 0;
 int32_t screen_counter = 0;
 bool show_floor = false;
 bool no_corridors = false;
+bool show_original = false;
 
 ofstream my_log;
 
@@ -89,62 +90,98 @@ bool HandleOptions(int argc, char **argv) {
 }
 
 bool IsMovementChar(int32_t c) {
-	static string movement_characters = "hjkluybn";
-
+	static string movement_characters = "hjkluybnHJKLUYBN";
 	return movement_characters.find(char(c)) != movement_characters.npos;
 }
 
-void HandleMovement(Board & b, Player & p, int32_t c) {
+bool IsTransitioningBetweenCooridorAndRoom(int32_t a, int32_t b) {
+	bool is_room_a = (isdigit(a) or isspace(a));
+	bool is_room_b = (isdigit(b) or isspace(b));
+	return is_room_a != is_room_b;
+}
+
+/*	This function will handle refreshing the screen as it supports the
+	qualification of movement by a numeric value. By handling the update
+	here, we can impose a delay (and animate the movement).
+*/
+void HandleMovement(Board & b, Player & p, int32_t c, int32_t numeric_qualifier) {
 	Coordinate ppos = p.pos;
-	switch (c) {
-		case 'h':		// Left
-			ppos.c--;
-			break;
-		case 'k':		// Up
-			ppos.r--;
-			break;
-		case 'j':		// Down
-			ppos.r++;
-			break;
-		case 'l':
-			ppos.c++;	// Right
-			break;
+	int32_t initial_position_type = b.cells[p.pos.r][p.pos.c].display_c;
 
-		case 'y':		// Up / Left
-			ppos.r--;
-			ppos.c--;
-			break;
-
-		case 'u':		// Up / Right
-			ppos.r--;
-			ppos.c++;
-			break;
-
-		case 'b':		// Down / Left
-			ppos.r++;
-			ppos.c--;
-			break;
-
-		case 'n':		// Down / Right
-			ppos.r++;
-			ppos.c++;
-			break;
-
-		default:
-			break;
+	if (isupper(c)) {
+		// A capital letter movement character means RUN!
+		numeric_qualifier = INT_MAX;
+		// The while loop below will loop for a while and will be broken
+		// when the player hits something that blocks them.
 	}
-
-	// Should not be needed but cannot hurt.
-	if (ppos.c < 0 or 
-		ppos.r < 0 or 
-		ppos.c >= BOARD_COLUMNS or
-		ppos.r >= BOARD_ROWS
-	) {
-		return;
+	if (numeric_qualifier == 0) {
+		numeric_qualifier = 1;
 	}
-	if (b.cells[ppos.r][ppos.c].base_type == ROOM or
-		b.cells[ppos.r][ppos.c].base_type == CORRIDOR) {
-		p.pos = ppos;
+	while (numeric_qualifier-- > 0) {
+		switch (tolower(c)) {
+			case 'h':		// Left
+				ppos.c--;
+				break;
+			case 'k':		// Up
+				ppos.r--;
+				break;
+			case 'j':		// Down
+				ppos.r++;
+				break;
+			case 'l':
+				ppos.c++;	// Right
+				break;
+
+			case 'y':		// Up / Left
+				ppos.r--;
+				ppos.c--;
+				break;
+
+			case 'u':		// Up / Right
+				ppos.r--;
+				ppos.c++;
+				break;
+
+			case 'b':		// Down / Left
+				ppos.r++;
+				ppos.c--;
+				break;
+
+			case 'n':		// Down / Right
+				ppos.r++;
+				ppos.c++;
+				break;
+
+			default:
+				break;
+		}
+
+		// Should not be needed but cannot hurt.
+		if (ppos.c < 0 or 
+			ppos.r < 0 or 
+			ppos.c >= BOARD_COLUMNS or
+			ppos.r >= BOARD_ROWS
+		) {
+			return;
+		}
+		if (b.cells[ppos.r][ppos.c].base_type == ROOM or
+			b.cells[ppos.r][ppos.c].base_type == CORRIDOR) {
+			p.pos = ppos;
+			b.Display(show_original);
+			p.Display();
+			refresh();
+			if (numeric_qualifier > 0) {
+				usleep(30000);
+			}
+			if (IsTransitioningBetweenCooridorAndRoom(
+				initial_position_type, 
+				b.cells[ppos.r][ppos.c].display_c)
+			) {
+				break;
+			}
+		} else {
+			break;
+		}
 	}
 }
 
@@ -152,6 +189,8 @@ int main(int argc, char * argv[]) {
 	srand(uint32_t(time(nullptr)));
 	Board board;
 	Player player;
+	string digit_accumulator;
+	int32_t numeric_qualifier = 0;		// 0 means none.
 
 	if (!HandleOptions(argc, argv))
 		return 0;
@@ -159,13 +198,20 @@ int main(int argc, char * argv[]) {
 	InitCurses();
 	InitializeCornerMap();
 	int32_t c = 0;
-	bool show_original = false;
 	board.Clear();
 	board.Create();
 	player.pos = board.upstairs;
 	if (my_log.is_open())
 		my_log << "Player: " << player.pos.to_string() << endl;
 	while (c != 'q') {
+		if (!isdigit(c)) {
+			if (digit_accumulator.size() > 0) {
+				numeric_qualifier = stoi(digit_accumulator);
+				digit_accumulator.clear();
+			}
+		} else if (isdigit(c)) {
+			digit_accumulator.push_back(c);
+		}
 		if (c == 't')
 			show_original = !show_original;
 		if (c == 'R') {
@@ -176,11 +222,12 @@ int main(int argc, char * argv[]) {
 			if (my_log.is_open())
 				my_log << "Player: " << player.pos.to_string() << endl;
 		} else if (IsMovementChar(c)) {
-			HandleMovement(board, player, c);
+			HandleMovement(board, player, c, numeric_qualifier);
+		} else {
+			board.Display(show_original);
+			player.Display();
+			refresh();
 		}
-		board.Display(show_original);
-		player.Display();
-		refresh();
 
 		while (true) {
 			if ((c = getch()) == 'q')
