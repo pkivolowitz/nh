@@ -116,7 +116,7 @@ void InitializeCornerMap() {
 	corner_map["HHHHH FV "] = ACS_URCORNER;
 	corner_map["   HHHFVV"] = ACS_TTEE;
 	corner_map["   HHHVVF"] = ACS_TTEE;
-	corner_map["H  VHHVVF"] = ACS_ULCORNER;
+	corner_map["H  VHHVVF"] = ACS_TTEE; 		// was ULCORNER
 	corner_map["FVVHHV  H"] = ACS_LRCORNER;
 	corner_map["FFFHHH VF"] = ACS_TTEE;
 	corner_map["FFVHHHFV "] = ACS_TTEE;
@@ -284,9 +284,55 @@ void InitializeCornerMap() {
 	corner_map["FVFHHH   "] = ACS_BTEE;
 	corner_map["FFVFHHFVH"] = ACS_ULCORNER;
 	corner_map["FV HH VHH"] = ACS_LRCORNER;
-
 	corner_map["FVFHVFFFF"] = ACS_LRCORNER;
+	corner_map["FFFHHHVVF"] = ACS_TTEE;
+	corner_map["FFFFVHHHV"] = ACS_ULCORNER;
+	corner_map["FFFVHFHVF"] = ACS_URCORNER;
+	corner_map["VHFHVF VF"] = ACS_RTEE;
+	corner_map["VFFHVFFFF"] = ACS_HLINE;
+	corner_map[" VFHHVFFF"] = ACS_BTEE;
+	corner_map["FHHHH HHH"] = ACS_LRCORNER;
+	corner_map["  H HHHHF"] = ACS_ULCORNER;
+	corner_map["    HHHHF"] = ACS_ULCORNER;
+	corner_map[" HHHHFHFF"] = ACS_LRCORNER;
+	corner_map[" HHHHFFVF"] = ACS_RTEE;
+	corner_map[" HHHHFVFF"] = ACS_LRCORNER;
+	corner_map["VHHHVFFFF"] = ACS_LRCORNER;
+	corner_map["FVHFHVFFF"] = ACS_LLCORNER;
+	corner_map["HVF HH VF"] = ACS_LTEE;
+	corner_map["V HVHVHVF"] = ACS_TTEE;
+	corner_map["VHVHVF VF"] = ACS_RTEE;
+	corner_map["FFFHHFFVF"] = ACS_URCORNER;
+	corner_map["FV HHHHHH"] = ACS_BTEE;
+	corner_map["V  HHHHHF"] = ACS_TTEE;
+	corner_map["HHFHHFFVF"] = ACS_RTEE;
+	corner_map["FVFFHHHHH"] = ACS_LTEE;
+	corner_map["FHHHHH VF"] = ACS_PLUS;
+	corner_map["FVHHH HHH"] = ACS_LRCORNER;
+	corner_map[" VFHHHFVV"] = ACS_PLUS;
+	corner_map["VFFHHFVVF"] = ACS_URCORNER;
+	corner_map["V  HH FVH"] = ACS_URCORNER;
+	corner_map["FFFHHHFVH"] = ACS_TTEE;
+	corner_map["HHHFVHFVV"] = ACS_LTEE;
+	corner_map["FFFHVFHHH"] = ACS_URCORNER;
+	corner_map["H   HH HF"] = ACS_ULCORNER;
+	corner_map["FVVHHVVFF"] = ACS_BTEE;
+	corner_map["VVFHVFFFF"] = ACS_LRCORNER;
+	corner_map["  V HVHVF"] = ACS_ULCORNER;
+	corner_map[" HVHVFVVF"] = ACS_RTEE;
+	corner_map["FFFHVFHVF"] = ACS_URCORNER;
+	corner_map["HVFHVFFFF"] = ACS_LRCORNER;
+	corner_map["FV HHHV V"] = ACS_BTEE;
+	corner_map["FV FHHHFF"] = ACS_LLCORNER;
+	corner_map["FFHHHF VF"] = ACS_URCORNER;
+	corner_map["HHHHHHFVV"] = ACS_TTEE;
+	corner_map["HHHHHHVVF"] = ACS_TTEE;
+	corner_map["FFVFVVHHV"] = ACS_ULCORNER;
+	corner_map["FVFVVFHVF"] = ACS_RTEE;
+	corner_map["FFFHHHFVF"] = ACS_TTEE;
+	corner_map["FV FVHVHV"] = ACS_LLCORNER;
 
+	corner_map["V VVHVVVF"] = ACS_TTEE;
 }
 
 // corner_map[""] = ACS_RTEE;
