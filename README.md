@@ -17,7 +17,7 @@ Frankly, the older one gets (I am in my fifties) the ever more important pooping
 I think a more nuanced model might be nice. Far fewer spells but those that remain could be made to play multiple
 roles depending on *how* they're used.
 
-## November 2022
+## November 2022 - 1
 
 So I started writing another nethack-like game the other day and realized
 I had started one some time back that I was reasonably pleased with. Took
@@ -26,5 +26,11 @@ four years and six months.
 
 I guess this is going to be a retirement project for me as I am not in my
 fifties any more :(.
+
+## November 2022 - 2
+
+Didn't feel well the other day so I rewrote the entire codebase again
+anyway. Produces even nicer maps in much less code (that is more
+maintainable).
 
 [Development_Notes](./devnotes/development_notes.md)

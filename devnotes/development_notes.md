@@ -114,8 +114,13 @@ to think about this.
 ## 11/08/2022 - 01
 
 Completely rewrote the entire program yesterday. What I have now is
-far fewer lines and far less complicated. Have the player moving 
+far fewer lines and far less complicated. Have the player moving
 around a little bit, even.
 
 ![brand new code](./brandnewcode.png)
 
+## 11/10/2022 - 01
+
+More than 330 special cases of line drawing implemented. In theory
+there are 3^9 potential 3X3 combinations but in practice there
+should be far fewer. Waiting for theory and practice to coincide.
