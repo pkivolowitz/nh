@@ -122,5 +122,5 @@ around a little bit, even.
 ## 11/10/2022 - 01
 
 More than 330 special cases of line drawing implemented. In theory
-there are 3^9 potential 3X3 combinations but in practice there
+there are 4^9 potential 3X3 combinations but in practice there
 should be far fewer. Waiting for theory and practice to coincide.
