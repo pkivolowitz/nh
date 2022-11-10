@@ -214,7 +214,7 @@ int main(int argc, char * argv[]) {
 		}
 		if (c == 't')
 			show_original = !show_original;
-		if (c == 'R') {
+		if (c == 'r') {
 			screen_counter++;
 			board.Clear();
 			board.Create();
@@ -223,11 +223,10 @@ int main(int argc, char * argv[]) {
 				my_log << "Player: " << player.pos.to_string() << endl;
 		} else if (IsMovementChar(c)) {
 			HandleMovement(board, player, c, numeric_qualifier);
-		} else {
-			board.Display(show_original);
-			player.Display();
-			refresh();
 		}
+		board.Display(show_original);
+		player.Display();
+		refresh();
 
 		while (true) {
 			if ((c = getch()) == 'q')
