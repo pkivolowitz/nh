@@ -31,4 +31,7 @@ private:
 	void PlaceStairs();
 	Coordinate GetGoodStairLocation(Room & room);
 	void RemoveFloorDigits();
+	bool PlanBForCooridors(uint32_t room_index);
+	void FlattenRooms();
+	void LayCorridor(Coordinate &, Coordinate &);
 };

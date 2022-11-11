@@ -5,6 +5,8 @@
 #include <random>
 #include <string>
 #include <sstream>
+#include <deque>
+#include <float.h>
 
 #include "board.hpp"
 #include "drawing_support.hpp"
@@ -142,8 +144,10 @@ void Board::PlaceCorridors() {
 	for (auto &r : rooms) {
 		Coordinate coord;
 		FindGCoords(br, bc, r, coord);
-		if (coord.c < 0 || coord.r < 0)
+		if (coord.c < 0 || coord.r < 0) {
+			PlanBForCooridors(r.room_number);
 			continue;
+		}
 		key_points.push_back(coord);
 	}
 	if (my_log.is_open()) {
@@ -155,29 +159,33 @@ void Board::PlaceCorridors() {
 	for (uint32_t index = 0; index < key_points.size() - 1; index++) {
 		Coordinate &src = key_points[index];
 		Coordinate &dst = key_points[index + 1];
-		if (src.c != dst.c) {
-			int32_t dc = (src.c < dst.c) ? 1 : -1;
-			int32_t r = src.r;
-			for (int32_t c = src.c; c != dst.c; c += dc) {
-				if (c < 0 or c >= BOARD_COLUMNS)
-					break;
-				if (isdigit(cells[r][c].c))
-					continue;
-				cells[r][c].display_c = cells[r][c].c = '#'; //'0' + index;
-				cells[r][c].base_type = CORRIDOR;
-			}
-		}
-		if (src.r != dst.r) {
-			int32_t dr = (src.r < dst.r) ? 1 : -1;
-			int32_t c = dst.c;
-			for (int32_t r = src.r; r != dst.r; r += dr) {
-				if (r < 0 or r >= BOARD_ROWS)
-					break;
-				if (isdigit(cells[r][c].c))
-					continue;
-				cells[r][c].display_c = cells[r][c].c = '#'; //'0' + index;
-				cells[r][c].base_type = CORRIDOR;
-			}
+		LayCorridor(src, dst);
+	}
+}
+
+void Board::LayCorridor(Coordinate & src, Coordinate & dst) {
+	if (src.c != dst.c) {
+	int32_t dc = (src.c < dst.c) ? 1 : -1;
+	int32_t r = src.r;
+	for (int32_t c = src.c; c != dst.c; c += dc) {
+		if (c < 0 or c >= BOARD_COLUMNS)
+			break;
+		if (isdigit(cells[r][c].c))
+			continue;
+		cells[r][c].display_c = cells[r][c].c = '#'; //'0' + index;
+		cells[r][c].base_type = CORRIDOR;
+	}
+	}
+	if (src.r != dst.r) {
+		int32_t dr = (src.r < dst.r) ? 1 : -1;
+		int32_t c = dst.c;
+		for (int32_t r = src.r; r != dst.r; r += dr) {
+			if (r < 0 or r >= BOARD_ROWS)
+				break;
+			if (isdigit(cells[r][c].c))
+				continue;
+			cells[r][c].display_c = cells[r][c].c = '#'; //'0' + index;
+			cells[r][c].base_type = CORRIDOR;
 		}
 	}
 }
@@ -347,3 +355,48 @@ Coordinate Board::GetGoodStairLocation(Room & room) {
 	retval.r += RR(-1, 1);
 	return retval;
 }
+
+/*	PlanBForCooridors() - this function attempts to find
+	an acceptable corridor in cases where the global 
+	algorithm fails for a room. This method rebuilds
+	the bad column and bad row vectors including only the
+	afflicted room and its nearest neighbor.
+
+	NOTE: Nearest neighbor depends upon the rooms already
+	being "flattened."
+*/
+
+bool Board::PlanBForCooridors(uint32_t room_index) {
+	Coordinate src = rooms.at(room_index).GetCentroid();
+	double smallest_distance = DBL_MAX;
+	uint32_t closest_neighbor;
+
+	for (uint32_t i = 0; i < rooms.size(); i++) {
+		if (i == room_index)
+			continue;
+		Coordinate dst = rooms.at(i).GetCentroid();
+		double d = sqrt((src.c - dst.c) * (src.c - dst.c) +
+						(src.r - dst.r) * (src.r - dst.r));
+		if (d < smallest_distance) {
+			smallest_distance = d;
+			closest_neighbor = i;
+		}
+	}
+	if (my_log.is_open()) {
+		my_log << "Closest neighbor to room: " << room_index;
+		my_log << " is room: " << closest_neighbor << endl;
+	}
+}
+
+/* Maybe this won't be needed.
+*/
+void Board::FlattenRooms() {
+	deque<Coordinate> work_list;
+
+	for (uint32_t room_index = 0; room_index < rooms.size(); room_index++) {
+		work_list.clear();
+		Coordinate c = rooms[room_index].tl;
+		int32_t flatted_room_value;
+	}
+}
+
