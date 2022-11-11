@@ -215,7 +215,7 @@ int main(int argc, char * argv[]) {
 		if (c == 't')
 			show_original = !show_original;
 		if (c == 'r') {
-			screen_counter++;
+down:		screen_counter++;
 			board.Clear();
 			board.Create();
 			player.pos = board.upstairs;
@@ -223,6 +223,10 @@ int main(int argc, char * argv[]) {
 				my_log << "Player: " << player.pos.to_string() << endl;
 		} else if (IsMovementChar(c)) {
 			HandleMovement(board, player, c, numeric_qualifier);
+		} else if (c == '>') {
+			if (board.IsDownstairs(player.pos)) {
+				goto down;
+			}
 		}
 		board.Display(show_original);
 		player.Display();

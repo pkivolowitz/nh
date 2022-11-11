@@ -129,6 +129,7 @@ void Board::FindGCoords(ivec &br, ivec &bc, Room &r, Coordinate &coord) {
 }
 
 void Board::PlaceCorridors() {
+	ivec needs_plan_b;
 	ivec bc; // bad_columns
 	ivec br; // bad_rows
 
@@ -144,7 +145,7 @@ void Board::PlaceCorridors() {
 		Coordinate coord;
 		FindGCoords(br, bc, r, coord);
 		if (coord.c < 0 || coord.r < 0) {
-			PlanBForCooridors(r.room_number);
+			needs_plan_b.push_back(r.room_number);
 			continue;
 		}
 		key_points.push_back(coord);
@@ -160,20 +161,24 @@ void Board::PlaceCorridors() {
 		Coordinate &dst = key_points[index + 1];
 		LayCorridor(src, dst);
 	}
+
+	for (auto r : needs_plan_b) {
+		PlanBForCooridors(r);
+	}
 }
 
 void Board::LayCorridor(Coordinate & src, Coordinate & dst) {
 	if (src.c != dst.c) {
-	int32_t dc = (src.c < dst.c) ? 1 : -1;
-	int32_t r = src.r;
-	for (int32_t c = src.c; c != dst.c; c += dc) {
-		if (c < 0 or c >= BOARD_COLUMNS)
-			break;
-		if (isdigit(cells[r][c].c))
-			continue;
-		cells[r][c].display_c = cells[r][c].c = '#'; //'0' + index;
-		cells[r][c].base_type = CORRIDOR;
-	}
+		int32_t dc = (src.c < dst.c) ? 1 : -1;
+		int32_t r = src.r;
+		for (int32_t c = src.c; c != dst.c; c += dc) {
+			if (c < 0 or c >= BOARD_COLUMNS)
+				break;
+			if (isdigit(cells[r][c].c))
+				continue;
+			cells[r][c].display_c = cells[r][c].c = '#'; //'0' + index;
+			cells[r][c].base_type = CORRIDOR;
+		}
 	}
 	if (src.r != dst.r) {
 		int32_t dr = (src.r < dst.r) ? 1 : -1;
@@ -341,19 +346,45 @@ void Board::PlaceStairs() {
 	}
 	shuffle(room_numbers.begin(), room_numbers.end(), default_random_engine(rand()));
 	upstairs = GetGoodStairLocation(rooms[room_numbers[0]]);
-	cells[upstairs.r][upstairs.c].display_c = cells[upstairs.r][upstairs.c].c = '<';
+	cells[upstairs.r][upstairs.c].display_c = cells[upstairs.r][upstairs.c].c = UP_STAIRS;
 	downstairs = GetGoodStairLocation(rooms[room_numbers[1]]);
-	cells[downstairs.r][downstairs.c].display_c = cells[downstairs.r][downstairs.c].c = '>';
+	cells[downstairs.r][downstairs.c].display_c = cells[downstairs.r][downstairs.c].c = DOWN_STAIRS;
 	assert(upstairs != downstairs);
 }
 
-/*	Returns coordinates in Board space!
+bool Board::IsAStairway(Coordinate & c) {
+	if ((c.r < 0 or c.r >= BOARD_ROWS) or
+	    (c.c < 0 or c.c >= BOARD_COLUMNS))
+		return false;
+	assert(c.c >= 0 and c.c < BOARD_COLUMNS);
+	return (cells[c.r][c.c].c == UP_STAIRS) or (cells[c.r][c.c].c == DOWN_STAIRS);
+}
+
+/*	Returns coordinates in Board space! The chosen coordinate is checked
+	to make sure it is not already a stairway. By beginning with the
+	room's centroid, we are guaranteed there is another room cell in
+	the 3x3 neighborhood.
 */
 Coordinate Board::GetGoodStairLocation(Room & room) {
 	Coordinate retval = room.GetCentroid();
-	retval.c += RR(-1, 1);
-	retval.r += RR(-1, 1);
+	while (true) {
+		retval.c += RR(-1, 1);
+		retval.r += RR(-1, 1);
+		if (!IsAStairway(retval)) {
+			// this will be very rare and does NOT constitute a
+			// potential for an infinite loop.
+			break;
+		}
+	}
 	return retval;
+}
+
+bool Board::IsDownstairs(Coordinate & c) {
+	return IsAStairway(c) and cells[c.r][c.c].c == DOWN_STAIRS;
+}
+
+bool Board::IsUpstairs(Coordinate & c) {
+	return IsAStairway(c) and cells[c.r][c.c].c == UP_STAIRS;
 }
 
 /*	PlanBForCooridors() - this function attempts to find
@@ -386,6 +417,8 @@ bool Board::PlanBForCooridors(uint32_t room_index) {
 		my_log << "Closest neighbor to room: " << room_index;
 		my_log << " is room: " << closest_neighbor << endl;
 	}
+	Coordinate dst = rooms.at(closest_neighbor).GetCentroid();
+	LayCorridor(src, dst);
 	return true;
 }
 
@@ -441,14 +474,14 @@ void Board::FlattenRooms() {
 
 					cell.has_been_added_to_work_list = true;
 					work_list.push_back(e_c);
-					if (my_log.is_open()) {
-						my_log << "work list size is: " << work_list.size();
-						my_log << " adding coordinate: " << e_c.to_string() << endl;
-					}
+					// if (my_log.is_open()) {
+					// 	my_log << "work list size is: " << work_list.size();
+					// 	my_log << " adding coordinate: " << e_c.to_string() << endl;
+					// }
 				}
 			}
-			if (my_log.is_open())
-				my_log << "work list size is: " << work_list.size() << endl;
+			// if (my_log.is_open())
+			// 	my_log << "work list size is: " << work_list.size() << endl;
 		}
 	}
 }

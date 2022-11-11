@@ -7,6 +7,9 @@ enum CellBaseType {
 	CORRIDOR
 };
 
+static const int32_t DOWN_STAIRS = '>';
+static const int32_t UP_STAIRS = '<';
+
 struct Cell {
 	Cell();
 	CellBaseType base_type;

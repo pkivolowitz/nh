@@ -13,6 +13,8 @@ struct Board {
 	void Clear();
 	void Create();
 	void Display(bool show_original);
+	bool IsDownstairs(Coordinate & c);
+	bool IsUpstairs(Coordinate & c);
 
 	Coordinate upstairs;
 	Coordinate downstairs;
@@ -34,4 +36,5 @@ private:
 	bool PlanBForCooridors(uint32_t room_index);
 	void FlattenRooms();
 	void LayCorridor(Coordinate &, Coordinate &);
+	bool IsAStairway(Coordinate &);
 };
