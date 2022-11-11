@@ -7,6 +7,11 @@ struct Coordinate {
 		c = r = 0;
 	}
 
+	Coordinate(int32_t r, int32_t c) {
+		this->r = r;
+		this->c = c;
+	}
+	
 	Coordinate(const Coordinate & other) {
 		c = other.c;
 		r = other.r;

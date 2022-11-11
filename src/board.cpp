@@ -299,8 +299,9 @@ void Board::Create() {
 	if (!no_corridors) {
 		PlaceCorridors();
 	}
-	PlaceStairs();
 	RemoveFloorDigits();
+	FlattenRooms();
+	PlaceStairs();
 }
 
 void Board::RemoveFloorDigits() {
@@ -386,6 +387,7 @@ bool Board::PlanBForCooridors(uint32_t room_index) {
 		my_log << "Closest neighbor to room: " << room_index;
 		my_log << " is room: " << closest_neighbor << endl;
 	}
+	return true;
 }
 
 void Board::FlattenRooms() {
@@ -401,10 +403,33 @@ void Board::FlattenRooms() {
 		// The region containing this cell will be flattened
 		// to the value of this cell.
 		int32_t flattened_room_value = cells[c.r][c.c].c;
+		work_list.push_back(c);
+		while (!work_list.empty()) {
+			Coordinate c = work_list.front();
+			work_list.pop_front();
+			assert(cells[c.r][c.c].base_type == ROOM);
+			cells[c.r][c.c].has_been_flattened = true;
+			cells[c.r][c.c].c = flattened_room_value;
+			cells[c.r][c.c].display_c = flattened_room_value;
 
-//		for (int32_t dr = -1; dr <= 1; dr++) {
-//			for (int32_t dc = -1; dc <= 1; dc++) {
-//				if (cells[
+			for (int32_t dr = -1; dr <= 1; dr++) {
+				for (int32_t dc = -1; dc <= 1; dc++) {
+					if (dc == 0 and dr == 0)
+						continue;
+						
+					Coordinate e_c = Coordinate(dr+c.r, dc+c.c);
+					assert(e_c.r >= 0 and e_c.r < BOARD_ROWS);
+					assert(e_c.c >= 0 and e_c.c < BOARD_COLUMNS);
+
+					Cell cell = cells[e_c.r][e_c.c];
+					if (cell.base_type != ROOM)
+						continue;
+					if (cell.has_been_flattened)
+						continue;
+					work_list.push_back(e_c);
+				}
+			}
+		}
 	}
 }
 
