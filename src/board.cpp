@@ -5,7 +5,6 @@
 #include <random>
 #include <string>
 #include <sstream>
-#include <deque>
 #include <float.h>
 
 #include "board.hpp"
@@ -391,22 +390,30 @@ bool Board::PlanBForCooridors(uint32_t room_index) {
 }
 
 void Board::FlattenRooms() {
-	deque<Coordinate> work_list;
+	vector<Coordinate> work_list;
 
 	for (uint32_t room_index = 0; room_index < rooms.size(); room_index++) {
 		work_list.clear();
+
 		Coordinate c = rooms[room_index].GetCentroid();
-		// If the centroid has already been flattened, the
-		// whole room has been flattened.
+		// If the centroid has already been flattened, the whole room has been flattened.
 		if (cells[c.r][c.c].has_been_flattened)
 			continue;
-		// The region containing this cell will be flattened
-		// to the value of this cell.
+		// The region containing this cell will be flattened to the value of this cell.
 		int32_t flattened_room_value = cells[c.r][c.c].c;
+		cells[c.r][c.c].has_been_added_to_work_list = true;
+		// Seed the work_list with the centroid's coordinate.
 		work_list.push_back(c);
+
+		// Here is the flood fill - remove an item from the work_list, process it
+		// and add all its unprocessed room neighbors to the work_list.
 		while (!work_list.empty()) {
-			Coordinate c = work_list.front();
-			work_list.pop_front();
+			assert(work_list.size() < 1920);
+
+			Coordinate c = work_list.back();
+			work_list.pop_back();
+
+			assert(cells[c.r][c.c].has_been_added_to_work_list);
 			assert(cells[c.r][c.c].base_type == ROOM);
 			cells[c.r][c.c].has_been_flattened = true;
 			cells[c.r][c.c].c = flattened_room_value;
@@ -417,18 +424,31 @@ void Board::FlattenRooms() {
 					if (dc == 0 and dr == 0)
 						continue;
 						
-					Coordinate e_c = Coordinate(dr+c.r, dc+c.c);
+					Coordinate e_c = Coordinate(dr + c.r, dc + c.c);
 					assert(e_c.r >= 0 and e_c.r < BOARD_ROWS);
 					assert(e_c.c >= 0 and e_c.c < BOARD_COLUMNS);
 
-					Cell cell = cells[e_c.r][e_c.c];
+					Cell & cell = cells[e_c.r][e_c.c];
+
+					if (cell.has_been_added_to_work_list)
+						continue;
+
 					if (cell.base_type != ROOM)
 						continue;
+
 					if (cell.has_been_flattened)
 						continue;
+
+					cell.has_been_added_to_work_list = true;
 					work_list.push_back(e_c);
+					if (my_log.is_open()) {
+						my_log << "work list size is: " << work_list.size();
+						my_log << " adding coordinate: " << e_c.to_string() << endl;
+					}
 				}
 			}
+			if (my_log.is_open())
+				my_log << "work list size is: " << work_list.size() << endl;
 		}
 	}
 }

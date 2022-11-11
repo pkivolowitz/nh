@@ -13,4 +13,5 @@ struct Cell {
 	int32_t c;
 	int32_t display_c;
 	bool has_been_flattened;
+	bool has_been_added_to_work_list;
 };
