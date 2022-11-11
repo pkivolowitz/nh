@@ -388,15 +388,23 @@ bool Board::PlanBForCooridors(uint32_t room_index) {
 	}
 }
 
-/* Maybe this won't be needed.
-*/
 void Board::FlattenRooms() {
 	deque<Coordinate> work_list;
 
 	for (uint32_t room_index = 0; room_index < rooms.size(); room_index++) {
 		work_list.clear();
-		Coordinate c = rooms[room_index].tl;
-		int32_t flatted_room_value;
+		Coordinate c = rooms[room_index].GetCentroid();
+		// If the centroid has already been flattened, the
+		// whole room has been flattened.
+		if (cells[c.r][c.c].has_been_flattened)
+			continue;
+		// The region containing this cell will be flattened
+		// to the value of this cell.
+		int32_t flattened_room_value = cells[c.r][c.c].c;
+
+//		for (int32_t dr = -1; dr <= 1; dr++) {
+//			for (int32_t dc = -1; dc <= 1; dc++) {
+//				if (cells[
 	}
 }
 
