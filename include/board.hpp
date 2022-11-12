@@ -5,6 +5,7 @@
 #include "utilities.hpp"
 #include "cell.hpp"
 #include "room.hpp"
+#include "player.hpp"
 
 using ivec = std::vector<int32_t>;
 
@@ -12,9 +13,10 @@ struct Board {
 	Cell cells[BOARD_ROWS][BOARD_COLUMNS];
 	void Clear();
 	void Create();
-	void Display(bool show_original);
+	void Display(Player & p, bool show_original);
 	bool IsDownstairs(Coordinate & c);
 	bool IsUpstairs(Coordinate & c);
+	bool IsAStairway(Coordinate &);
 
 	Coordinate upstairs;
 	Coordinate downstairs;
@@ -36,5 +38,4 @@ private:
 	bool PlanBForCooridors(uint32_t room_index);
 	void FlattenRooms();
 	void LayCorridor(Coordinate &, Coordinate &);
-	bool IsAStairway(Coordinate &);
 };

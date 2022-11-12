@@ -94,10 +94,8 @@ bool IsMovementChar(int32_t c) {
 	return movement_characters.find(char(c)) != movement_characters.npos;
 }
 
-bool IsTransitioningBetweenCooridorAndRoom(int32_t a, int32_t b) {
-	bool is_room_a = (isdigit(a) or isspace(a));
-	bool is_room_b = (isdigit(b) or isspace(b));
-	return is_room_a != is_room_b;
+bool IsTransitioningBetweenCooridorAndRoom(CellBaseType a, CellBaseType b) {
+	return a != b;
 }
 
 /*	This function will handle refreshing the screen as it supports the
@@ -106,7 +104,7 @@ bool IsTransitioningBetweenCooridorAndRoom(int32_t a, int32_t b) {
 */
 void HandleMovement(Board & b, Player & p, int32_t c, int32_t numeric_qualifier) {
 	Coordinate ppos = p.pos;
-	int32_t initial_position_type = b.cells[p.pos.r][p.pos.c].display_c;
+	CellBaseType initial_position_type = b.cells[p.pos.r][p.pos.c].base_type;
 
 	if (isupper(c)) {
 		// A capital letter movement character means RUN!
@@ -167,7 +165,7 @@ void HandleMovement(Board & b, Player & p, int32_t c, int32_t numeric_qualifier)
 		if (b.cells[ppos.r][ppos.c].base_type == ROOM or
 			b.cells[ppos.r][ppos.c].base_type == CORRIDOR) {
 			p.pos = ppos;
-			b.Display(show_original);
+			b.Display(p, show_original);
 			p.Display();
 			refresh();
 			if (numeric_qualifier > 0) {
@@ -175,8 +173,10 @@ void HandleMovement(Board & b, Player & p, int32_t c, int32_t numeric_qualifier)
 			}
 			if (IsTransitioningBetweenCooridorAndRoom(
 				initial_position_type, 
-				b.cells[ppos.r][ppos.c].display_c)
+				b.cells[ppos.r][ppos.c].base_type)
 			) {
+				break;
+			} else if (b.IsAStairway(p.pos)) {
 				break;
 			}
 		} else {
@@ -228,7 +228,7 @@ down:		screen_counter++;
 				goto down;
 			}
 		}
-		board.Display(show_original);
+		board.Display(player, show_original);
 		player.Display();
 		refresh();
 

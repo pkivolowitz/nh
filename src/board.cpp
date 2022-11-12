@@ -253,38 +253,49 @@ void Board::PlaceCorners() {
 	renderable board.
 */
 void Board::Fill(int32_t rn) {
-	Room *rptr = &rooms[rn];
-	for (int32_t r = rptr->tl.r; r < rptr->br.r; r++) {
-		for (int32_t c = rptr->tl.c; c < rptr->br.c; c++) {
+	Room & rm = rooms[rn];
+	for (int32_t r = rm.tl.r; r < rm.br.r; r++) {
+		for (int32_t c = rm.tl.c; c < rm.br.c; c++) {
 			assert(c > 0);
 			assert(r < BOARD_ROWS);
 			assert(c < BOARD_COLUMNS);
 			cells[r][c].c = '0' + rn;
 			cells[r][c].display_c = '0' + rn;
 			cells[r][c].base_type = ROOM;
+			cells[r][c].is_lit = rm.is_lit;
 		}
 	}
 }
 
+inline void SetCell(Cell & cell, CellBaseType bt, int32_t c, bool il) {
+	cell.base_type = bt;
+	cell.c = c;
+	cell.is_lit = il;
+}
+
 void Board::Enclose(int32_t rn) {
-	Room *rptr = &rooms[rn];
-	for (int32_t r = rptr->tl.r; r < rptr->br.r; r++) {
+	Room & rm = rooms[rn];
+	for (int32_t r = rm.tl.r; r < rm.br.r; r++) {
 		assert(r < BOARD_ROWS);
-		assert(rptr->tl.c > 0);
-		assert(rptr->br.c < BOARD_COLUMNS);
-		if (!cells[r][rptr->tl.c - 1].c)
-			cells[r][rptr->tl.c - 1].c = ACS_VLINE;
-		if (!cells[r][rptr->br.c].c)
-			cells[r][rptr->br.c].c = ACS_VLINE;
+		assert(rm.tl.c > 0);
+		assert(rm.br.c < BOARD_COLUMNS);
+		if (!cells[r][rm.tl.c - 1].c) {
+			SetCell(cells[r][rm.tl.c - 1], WALL, ACS_VLINE, rm.is_lit);
+		}
+		if (!cells[r][rm.br.c].c) {
+			SetCell(cells[r][rm.br.c], WALL, ACS_VLINE, rm.is_lit);
+		}
 	}
-	for (int32_t c = rptr->tl.c - 1; c < rptr->br.c + 1; c++) {
+	for (int32_t c = rm.tl.c - 1; c < rm.br.c + 1; c++) {
 		assert(c < BOARD_COLUMNS);
-		assert(rptr->tl.r > 0);
-		assert(rptr->br.r < BOARD_ROWS);
-		if (!cells[rptr->tl.r - 1][c].c)
-			cells[rptr->tl.r - 1][c].c = ACS_HLINE;
-		if (!cells[rptr->br.r][c].c)
-			cells[rptr->br.r][c].c = ACS_HLINE;
+		assert(rm.tl.r > 0);
+		assert(rm.br.r < BOARD_ROWS);
+		if (!cells[rm.tl.r - 1][c].c) {
+			SetCell(cells[rm.tl.r - 1][c], WALL, ACS_HLINE, rm.is_lit);
+		}
+		if (!cells[rm.br.r][c].c) {
+			SetCell(cells[rm.br.r][c], WALL, ACS_HLINE, rm.is_lit);
+		}
 	}
 }
 
@@ -313,21 +324,31 @@ void Board::RemoveFloorDigits() {
 		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
 			if (isdigit(cells[r][c].c)) {
 				cells[r][c].display_c = cells[r][c].c =
-					(show_floor) ? cells[r][c].c : ' ';
+					(show_floor) ? cells[r][c].c : ACS_BULLET;
 			}
 		}
 	}
 }
 
-void Board::Display(bool show_original) {
+void Board::Display(Player & p, bool show_original) {
 	erase();
 	for (int32_t r = 0; r < BOARD_ROWS; r++) {
-		move(BOARD_TOP_OFFSET + r, 0);
 		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
-			if (show_original)
-				addch((cells[r][c].c) ? cells[r][c].c : ACS_BULLET);
-			else
-				addch((cells[r][c].display_c) ? cells[r][c].display_c : ACS_BULLET);
+			Coordinate coord(r, c);
+			Cell & cell = cells[r][c];
+			if (cell.is_lit or coord.Distance(p.pos) < 2.5) {
+				if (cell.base_type == EMPTY)
+					continue;
+				if (cell.base_type == WALL or 
+					cell.base_type == CORRIDOR) {
+						cell.is_lit = true;
+				} else if (IsAStairway(coord))
+					cell.is_lit = true;
+				if (show_original)
+					mvaddch(BOARD_TOP_OFFSET + r, c, (cell.c) ? cell.c : ACS_BULLET);
+				else
+					mvaddch(BOARD_TOP_OFFSET + r, c, (cell.display_c) ? cell.display_c : ACS_BULLET);
+			}
 		}
 	}
 	move(0, 0);
@@ -427,11 +448,13 @@ void Board::FlattenRooms() {
 
 	for (uint32_t room_index = 0; room_index < rooms.size(); room_index++) {
 		work_list.clear();
+		bool is_lit;
 
 		Coordinate c = rooms[room_index].GetCentroid();
 		// If the centroid has already been flattened, the whole room has been flattened.
 		if (cells[c.r][c.c].has_been_flattened)
 			continue;
+		is_lit = rooms[room_index].is_lit;
 		// The region containing this cell will be flattened to the value of this cell.
 		int32_t flattened_room_value = cells[c.r][c.c].c;
 		cells[c.r][c.c].has_been_added_to_work_list = true;
@@ -444,13 +467,15 @@ void Board::FlattenRooms() {
 			assert(work_list.size() < 1920);
 
 			Coordinate c = work_list.back();
+			Cell & cell = cells[c.r][c.c];
 			work_list.pop_back();
 
-			assert(cells[c.r][c.c].has_been_added_to_work_list);
-			assert(cells[c.r][c.c].base_type == ROOM);
-			cells[c.r][c.c].has_been_flattened = true;
-			cells[c.r][c.c].c = flattened_room_value;
-			cells[c.r][c.c].display_c = flattened_room_value;
+			assert(cell.has_been_added_to_work_list);
+			assert(cell.base_type == ROOM);
+			cell.has_been_flattened = true;
+			cell.c = flattened_room_value;
+			cell.is_lit = is_lit;
+			cell.display_c = flattened_room_value;
 
 			for (int32_t dr = -1; dr <= 1; dr++) {
 				for (int32_t dc = -1; dc <= 1; dc++) {

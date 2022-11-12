@@ -1,6 +1,7 @@
 #pragma once
 #include <cinttypes>
 #include <string>
+#include <cmath>
 
 struct Coordinate {
 	Coordinate() {
@@ -15,6 +16,12 @@ struct Coordinate {
 	Coordinate(const Coordinate & other) {
 		c = other.c;
 		r = other.r;
+	}
+
+	inline double Distance(const Coordinate & other) {
+		double dr = r - other.r;
+		double dc = c - other.c;
+		return sqrt(dr * dr + dc * dc);
 	}
 
 	inline bool operator==(const Coordinate & other) {
