@@ -22,6 +22,5 @@ struct Cell {
 	int32_t final_room_number;
 	bool has_been_flattened;
 	bool has_been_added_to_work_list;
-	bool is_lit;
 	bool is_known;
 };

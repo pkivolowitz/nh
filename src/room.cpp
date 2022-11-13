@@ -29,7 +29,6 @@ void Room::Initialize(int32_t rn) {
 	centroid.c = (tl.c + br.c) / 2;
 	centroid.r = (tl.r + br.r) / 2;
 
-	is_lit = RR(0, 100) > 50;
 	has_been_mapped = false;
 }
 

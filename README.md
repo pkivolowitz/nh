@@ -1,36 +1,31 @@
-# pnh - Perry's NetHack
+# PNH - Perry's NetHack
 
-## May 2018
+## Doorways
 
-This is yet another nethack-like game. About once a year I get a notion to write my own nethack-like game to address what I see as deficiencies in existing versions and derivatives. Among these deficiencies, I include:
+There are no doors in PNH. You're roaming underground caverns.
 
-* All organisms have to poop. Players, especially should poop. And, if they do have to "go", what are the implications? 
-Frankly, the older one gets (I am in my fifties) the ever more important pooping gets. This weighs heavily on my mind. Squirrel.
+*Design Note:* Doors in NetHack were, in our view, mostly a time wasting
+nuisance.
 
-* Caves are not laid out in grids of rectangles. This must go.
+## Illumination
 
-* H. R. Giger's Alien has not been given its due in games of this sort. Why stop at seeing a grave of a previous instance of you? Why not pass yourself glued to a wall with a hole in your chest?
+Lighting in PNH is very different from NetHack in that in PNH all rooms
+are dark.
 
-* Critters should be more intelligent. Way more intelligent.
+Nothing beyond your torch is visible unless it has been noted
+in your notebook. Walls and corridors you encounter are entered into
+your notebook automatically so that as you explore, your notebook builds
+up a map of each level. Stairways are also automatically entered into
+your notebook.
 
-* Magic models are too simple. In NetHack, the ability to cast a spell is binary - either you can or you can't.
-I think a more nuanced model might be nice. Far fewer spells but those that remain could be made to play multiple
-roles depending on *how* they're used.
+You may choose to manually enter specific locations into your notebook.
+Such locations will continue to be drawn after you leave the room in
+which they are found.
 
-## November 2022 - 1
-
-So I started writing another nethack-like game the other day and realized
-I had started one some time back that I was reasonably pleased with. Took
-me a while to find it and lo and behold, I had not touched the source in
-four years and six months.
-
-I guess this is going to be a retirement project for me as I am not in my
-fifties any more :(.
-
-## November 2022 - 2
-
-Didn't feel well the other day so I rewrote the entire codebase again
-anyway. Produces even nicer maps in much less code (that is more
-maintainable).
+The NetHack lighting spells would cause all locations within a certain
+radius to remain illuminated even after you left the room. This is not
+modeled in PNH. In PNH, a lighting spell simply increases the range of
+your torch. This has the advantage of you being able to see farther but
+it also means critters can see *you* from further away.
 
 [Development_Notes](./devnotes/development_notes.md)

@@ -10,7 +10,6 @@ struct Room {
 	Coordinate tl;
 	Coordinate br;
 	int32_t room_number;
-	bool is_lit;
 	bool has_been_mapped;
 
 private:

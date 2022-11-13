@@ -264,15 +264,13 @@ void Board::Fill(int32_t rn) {
 			cells[r][c].original_c = '0' + rn;
 			cells[r][c].display_c = '0' + rn;
 			cells[r][c].base_type = ROOM;
-			cells[r][c].is_lit = rm.is_lit;
 		}
 	}
 }
 
-inline void SetCell(Cell & cell, CellBaseType bt, int32_t c, bool il) {
+inline void SetCell(Cell & cell, CellBaseType bt, int32_t c) {
 	cell.base_type = bt;
 	cell.original_c = c;
-	cell.is_lit = il;
 }
 
 void Board::Enclose(int32_t rn) {
@@ -282,10 +280,10 @@ void Board::Enclose(int32_t rn) {
 		assert(rm.tl.c > 0);
 		assert(rm.br.c < BOARD_COLUMNS);
 		if (!cells[r][rm.tl.c - 1].original_c) {
-			SetCell(cells[r][rm.tl.c - 1], WALL, ACS_VLINE, rm.is_lit);
+			SetCell(cells[r][rm.tl.c - 1], WALL, ACS_VLINE);
 		}
 		if (!cells[r][rm.br.c].original_c) {
-			SetCell(cells[r][rm.br.c], WALL, ACS_VLINE, rm.is_lit);
+			SetCell(cells[r][rm.br.c], WALL, ACS_VLINE);
 		}
 	}
 	for (int32_t c = rm.tl.c - 1; c < rm.br.c + 1; c++) {
@@ -293,10 +291,10 @@ void Board::Enclose(int32_t rn) {
 		assert(rm.tl.r > 0);
 		assert(rm.br.r < BOARD_ROWS);
 		if (!cells[rm.tl.r - 1][c].original_c) {
-			SetCell(cells[rm.tl.r - 1][c], WALL, ACS_HLINE, rm.is_lit);
+			SetCell(cells[rm.tl.r - 1][c], WALL, ACS_HLINE);
 		}
 		if (!cells[rm.br.r][c].original_c) {
-			SetCell(cells[rm.br.r][c], WALL, ACS_HLINE, rm.is_lit);
+			SetCell(cells[rm.br.r][c], WALL, ACS_HLINE);
 		}
 	}
 }
@@ -320,8 +318,8 @@ void Board::Create() {
 	FlattenRooms();
 	PlaceStairs();
 	//DebugPrintBoard(0);
-	DebugPrintBoard(1);
-	DebugPrintBoard(2);
+	//DebugPrintBoard(1);
+	//DebugPrintBoard(2);
 }
 
 /* void Board::RemoveFloorDigits() {
@@ -355,6 +353,11 @@ void Board::Display(Player & p, bool show_original) {
 			if (cell.base_type == EMPTY)
 				continue;
 			
+			if (show_original) {
+				Show(show_original, r, c, cell);
+				continue;
+			}
+
 			// If a cell is:
 			//	- not a stairway and 
 			//	- is a room and
@@ -367,11 +370,10 @@ void Board::Display(Player & p, bool show_original) {
 					continue;
 			}
 
-			// Always show walls, corridors and stairs if
-			// they are known (seen before).
+			// Always show walls, corridors and stairs if they are known.
 			if (
 				(cell.base_type == WALL or 
-				 cell.base_type == CORRIDOR or 
+				 cell.base_type == CORRIDOR or
 				 IsAStairway(coord)
 				) and 
 				cell.is_known
@@ -380,27 +382,16 @@ void Board::Display(Player & p, bool show_original) {
 				continue;
 			}
 
-			// If the cell is close by, mark it as known.
-			if (coord.Distance(p.pos) < 2.5) {
-				cell.is_known = true;
-			}
-
-			// Show the cell if:
-			//	- the cell is lit and in line of sight or
-			// 	- the cell has been seen previously
-
-			if ((cell.is_lit and LineOfSight(p.pos, coord)) or
-				(cell.is_known)) {
-				if (
-					(cell.base_type == WALL or cell.base_type == CORRIDOR) and 
-					!cell.is_known
-				) {
-					continue;
-				}
-				cell.is_known = true;
-				Show(show_original, r, c, cell);
+			// Don't show remaining cells that are beyond our torch.
+			if (!(coord.Distance(p.pos) < 2.5)) {
 				continue;
 			}
+
+			// The cell is close by - it might be a wall, etc.
+			// Mark it known.
+			cell.is_known = true;
+
+			Show(show_original, r, c, cell);
 		}
 	}
 	move(0, 0);
@@ -509,14 +500,12 @@ void Board::FlattenRooms() {
 
 	for (uint32_t room_index = 0; room_index < rooms.size(); room_index++) {
 		work_list.clear();
-		bool is_lit;
 
 		Coordinate c = rooms[room_index].GetCentroid();
 		// If the centroid has already been flattened, the whole room 
 		// has been flattened.
 		if (cells[c.r][c.c].has_been_flattened)
 			continue;
-		is_lit = rooms[room_index].is_lit;
 		// The region containing this cell will be flattened to the 
 		// value of this cell.
 		int32_t flattened_room_value = rooms[room_index].room_number;
@@ -538,7 +527,6 @@ void Board::FlattenRooms() {
 
 			cell.has_been_flattened = true;
 			cell.final_room_number = flattened_room_value;
-			cell.is_lit = is_lit;
 			cell.display_c = ACS_BULLET;
 
 			for (int32_t dr = -1; dr <= 1; dr++) {
@@ -583,7 +571,7 @@ void Board::DebugPrintBoard(int32_t mode) {
 	if (mode == 0)
 		my_log << "base_type\n";
 	else if (mode == 1)
-		my_log << "is_lit\n";
+		my_log << "is_lit is deprecated\n";
 	else if (mode == 2)
 		my_log << "is_known\n";
 
@@ -593,10 +581,6 @@ void Board::DebugPrintBoard(int32_t mode) {
 			switch (mode) {
 				case 0:
 					my_log << cell.base_type;
-					break;
-
-				case 1:
-					my_log << cell.is_lit;
 					break;
 
 				case 2:
