@@ -4,8 +4,14 @@
 
 There are no doors in PNH. You're roaming underground caverns.
 
-*Design Note:* Doors in NetHack were, in our view, mostly a time wasting
-nuisance.
+This also means there are no secret doors.
+
+You can still block critters from entering a room using the more general
+*blocking spell* which makes it difficult or impossible for critters to
+cross into.
+
+*Design Note:* Doors in NetHack were, in our view, mostly a time
+wasting nuisance. We have chosen to remove them entirely. 
 
 ## Illumination
 
@@ -28,4 +34,8 @@ modeled in PNH. In PNH, a lighting spell simply increases the range of
 your torch. This has the advantage of you being able to see farther but
 it also means critters can see *you* from further away.
 
-[Development_Notes](./devnotes/development_notes.md)
+*Design Note:* These decisions were made to regularize how lighting
+is handled - all room cells are handled the same way and honor a more
+"real-world" ethos. The idea of keeping a notebook is a reasonable one.
+Marking stairs, walls and corridors would make sense to add to your
+notebook as you explore the caves.
