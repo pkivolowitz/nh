@@ -11,7 +11,7 @@ You can still block critters from entering a room using the more general
 cross into.
 
 *Design Note:* Doors in NetHack were, in our view, mostly a time
-wasting nuisance. We have chosen to remove them entirely. 
+wasting nuisance. We have chosen to remove them entirely.
 
 ## Illumination
 
@@ -33,6 +33,10 @@ radius to remain illuminated even after you left the room. This is not
 modeled in PNH. In PNH, a lighting spell simply increases the range of
 your torch. This has the advantage of you being able to see farther but
 it also means critters can see *you* from further away.
+
+*Gameplay Note:* That all rooms are dark has the consequence that a
+player peeking into a lit room will *not* see the whole room - the
+room will <u>have</u> to be explored.
 
 *Design Note:* These decisions were made to regularize how lighting
 is handled - all room cells are handled the same way and honor a more

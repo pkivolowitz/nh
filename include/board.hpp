@@ -13,7 +13,7 @@ struct Board {
 	Cell cells[BOARD_ROWS][BOARD_COLUMNS];
 	void Clear();
 	void Create();
-	void Display(Player & p, bool show_original);
+	void Display(Player & p, bool show_original, double tr = 2.5);
 	bool IsDownstairs(Coordinate & c);
 	bool IsUpstairs(Coordinate & c);
 	bool IsAStairway(Coordinate &);
@@ -40,6 +40,6 @@ private:
 	bool PlanBForCooridors(uint32_t room_index);
 	void FlattenRooms();
 	void LayCorridor(Coordinate &, Coordinate &);
-	void Show(bool show_original, int32_t r, int32_t c, const Cell & cell);
-	bool LineOfSight(Coordinate & player, Coordinate cell);
+	void Show(bool show_original, Coordinate & coord, const Cell & cell);
+	bool LineOfSight(Coordinate & player, Coordinate & cell);
 };

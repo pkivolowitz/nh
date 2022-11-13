@@ -18,13 +18,34 @@ struct Coordinate {
 		r = other.r;
 	}
 
-	inline double Distance(const Coordinate & other) {
+	inline double Distance(Coordinate & other) {
 		double dr = r - other.r;
 		double dc = c - other.c;
 		return sqrt(dr * dr + dc * dc);
 	}
 
-	inline bool operator==(const Coordinate & other) {
+	inline Coordinate operator-(const Coordinate & other) {
+		Coordinate retval(r - other.r, c - other.c);
+		return retval;
+	}
+
+	inline Coordinate operator+(const Coordinate &other) {
+		Coordinate retval(r + other.r, c + other.c);
+		return retval;
+	}
+
+	inline Coordinate operator*(const double t) {
+		Coordinate retval(int32_t(r * t), int32_t(c * t));
+		return retval;
+	}
+
+	inline Coordinate LERP(const Coordinate &other, double t) {
+		Coordinate retval = Coordinate(other.r - r, other.c - c);
+		retval = retval * t + *this;
+		return retval;
+	}
+
+	inline bool operator==(const Coordinate &other) {
 		return c == other.c and r == other.r;
 	}
 

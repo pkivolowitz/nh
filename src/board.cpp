@@ -333,16 +333,16 @@ void Board::Create() {
 	}
 }
  */
-void Board::Show(bool show_original, int32_t r, int32_t c, const Cell & cell) {
+void Board::Show(bool show_original, Coordinate & coord, const Cell & cell) {
 	if (show_original)
-		mvaddch(BOARD_TOP_OFFSET + r, c, cell.original_c);
+		mvaddch(BOARD_TOP_OFFSET + coord.r, coord.c, cell.original_c);
 	else
-		mvaddch(BOARD_TOP_OFFSET + r, c, cell.display_c);
+		mvaddch(BOARD_TOP_OFFSET + coord.r, coord.c, cell.display_c);
 }
 
-void Board::Display(Player & p, bool show_original) {
+void Board::Display(Player & p, bool show_original, double tr) {
 	erase();
-	int32_t pfrn = cells[p.pos.r][p.pos.c].final_room_number;
+	//int32_t pfrn = cells[p.pos.r][p.pos.c].final_room_number;
 
 	for (int32_t r = 0; r < BOARD_ROWS; r++) {
 		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
@@ -354,7 +354,7 @@ void Board::Display(Player & p, bool show_original) {
 				continue;
 			
 			if (show_original) {
-				Show(show_original, r, c, cell);
+				Show(show_original, coord, cell);
 				continue;
 			}
 
@@ -363,13 +363,13 @@ void Board::Display(Player & p, bool show_original) {
 			//	- is a room and
 			//	- it belongs to a room other than that the player is in
 			// then don't show it.
-			if (cell.base_type == ROOM and 
+			/* if (cell.base_type == ROOM and 
 				cell.final_room_number != pfrn and
 				!IsAStairway(coord))
 			{
 					continue;
 			}
-
+ */
 			// Always show walls, corridors and stairs if they are known.
 			if (
 				(cell.base_type == WALL or 
@@ -378,30 +378,67 @@ void Board::Display(Player & p, bool show_original) {
 				) and 
 				cell.is_known
 			) {
-				Show(show_original, r, c, cell);
+				Show(show_original, coord, cell);
 				continue;
 			}
 
 			// Don't show remaining cells that are beyond our torch.
-			if (!(coord.Distance(p.pos) < 2.5)) {
+			if (!(coord.Distance(p.pos) < tr)) {
 				continue;
 			}
+
+			if (!LineOfSight(p.pos, coord))
+				continue;
 
 			// The cell is close by - it might be a wall, etc.
 			// Mark it known.
 			cell.is_known = true;
 
-			Show(show_original, r, c, cell);
+			Show(show_original, coord, cell);
 		}
 	}
+
+	if (my_log.is_open())
+		my_log << endl;
+
 	move(0, 0);
 	stringstream ss;
-	ss << "Seed: " << setw(8) << left << seed;
-	ss << "Screen: " << setw(6) << left << screen_counter;
+	ss << "Seed: " << setw(4) << left << seed;
+	ss << "Screen: " << setw(4) << left << screen_counter;
+	ss << "PPOS: " << p.pos.to_string();
 	addstr(ss.str().c_str());
 }
 
-bool Board::LineOfSight(Coordinate &player, Coordinate cell) {
+bool Board::LineOfSight(Coordinate &p, Coordinate & other) {
+	double distance = p.Distance(other);
+	double delta = 1.0 / (distance + 1.0);
+	if (distance <= 1)
+		return true;
+
+	if (my_log.is_open()) {
+		my_log << "LOS p: " << p.to_string();
+		my_log << " other: " << other.to_string();
+		my_log << " dist: " << distance;
+		my_log << " delta: " << delta;
+	}
+	for (double t = 0; t < 1.0; t += delta) {
+		Coordinate s = p.LERP(other, t);
+		if (my_log.is_open()) {
+			my_log << " lerp: " << s.to_string();
+		}
+		if (
+			cells[s.r][s.c].base_type == EMPTY or
+			cells[s.r][s.c].base_type == WALL
+		) {
+			if (my_log.is_open()) {
+				my_log << " returning false\n";
+			}
+			return false;
+		}
+	}
+	if (my_log.is_open()) {
+		my_log << " returning true\n";
+	}
 	return true;
 }
 
