@@ -21,6 +21,8 @@ struct Board {
 	Coordinate upstairs;
 	Coordinate downstairs;
 
+	void DebugPrintBoard(int32_t mode);
+
 	RoomVec rooms;
 
 private:
@@ -39,4 +41,5 @@ private:
 	void FlattenRooms();
 	void LayCorridor(Coordinate &, Coordinate &);
 	void Show(bool show_original, int32_t r, int32_t c, const Cell & cell);
+	bool LineOfSight(Coordinate & player, Coordinate cell);
 };

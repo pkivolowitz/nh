@@ -43,7 +43,7 @@ void Board::FindRowsToAvoid(ivec &r_avoid) {
 			}
 		}
 	}
-	if (my_log.is_open()) {
+	if (false and my_log.is_open()) {
 		my_log << "Rows to avoid: ";
 		for (auto i : r_avoid)
 			my_log << i << " ";
@@ -69,7 +69,7 @@ void Board::FindColsToAvoid(ivec &c_avoid) {
 			}
 		}
 	}
-	if (my_log.is_open()) {
+	if (false and my_log.is_open()) {
 		my_log << "Cols to avoid: ";
 		for (auto i : c_avoid)
 			my_log << i << " ";
@@ -122,7 +122,7 @@ void Board::FindGCoords(ivec &br, ivec &bc, Room &r, Coordinate &coord) {
 			break;
 		}
 	}
-	if (my_log.is_open()) {
+	if (false and my_log.is_open()) {
 		my_log << "Room: " << r.room_number << " ";
 		my_log << coord.r << " " << coord.c << endl;
 	}
@@ -135,7 +135,7 @@ void Board::PlaceCorridors() {
 
 	FindColsToAvoid(bc);
 	FindRowsToAvoid(br);
-	if (my_log.is_open()) {
+	if (false and my_log.is_open()) {
 		my_log << "ColsToAvoid.size() " << bc.size() << endl;
 		my_log << "RowsToAvoid.size() " << br.size() << endl;
 	}
@@ -150,7 +150,7 @@ void Board::PlaceCorridors() {
 		}
 		key_points.push_back(coord);
 	}
-	if (my_log.is_open()) {
+	if (false and my_log.is_open()) {
 		my_log << "KeyPoint.size() " << key_points.size() << endl;
 	}
 
@@ -319,6 +319,9 @@ void Board::Create() {
 	//RemoveFloorDigits();
 	FlattenRooms();
 	PlaceStairs();
+	//DebugPrintBoard(0);
+	DebugPrintBoard(1);
+	DebugPrintBoard(2);
 }
 
 /* void Board::RemoveFloorDigits() {
@@ -347,24 +350,53 @@ void Board::Display(Player & p, bool show_original) {
 		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
 			Coordinate coord(r, c);
 			Cell & cell = cells[r][c];
+
 			// Don't show "nothing"
 			if (cell.base_type == EMPTY)
 				continue;
-			// If the cell is not in the same room as the player,
-			// don't show it.
+			
+			// If a cell is:
+			//	- not a stairway and 
+			//	- is a room and
+			//	- it belongs to a room other than that the player is in
+			// then don't show it.
 			if (cell.base_type == ROOM and 
-				cell.final_room_number != pfrn)
-				continue;
-			if ((cell.base_type == WALL or cell.base_type == CORRIDOR or IsAStairway(coord)) and cell.is_known)
+				cell.final_room_number != pfrn and
+				!IsAStairway(coord))
 			{
-				// If the spot is a wall or hallway or stairway and we
-				// have seen the spot before then continue to render it.
+					continue;
+			}
+
+			// Always show walls, corridors and stairs if
+			// they are known (seen before).
+			if (
+				(cell.base_type == WALL or 
+				 cell.base_type == CORRIDOR or 
+				 IsAStairway(coord)
+				) and 
+				cell.is_known
+			) {
 				Show(show_original, r, c, cell);
 				continue;
 			}
 
+			// If the cell is close by, mark it as known.
 			if (coord.Distance(p.pos) < 2.5) {
-				// If the spot is close to us, make it known.
+				cell.is_known = true;
+			}
+
+			// Show the cell if:
+			//	- the cell is lit and in line of sight or
+			// 	- the cell has been seen previously
+
+			if ((cell.is_lit and LineOfSight(p.pos, coord)) or
+				(cell.is_known)) {
+				if (
+					(cell.base_type == WALL or cell.base_type == CORRIDOR) and 
+					!cell.is_known
+				) {
+					continue;
+				}
 				cell.is_known = true;
 				Show(show_original, r, c, cell);
 				continue;
@@ -376,6 +408,10 @@ void Board::Display(Player & p, bool show_original) {
 	ss << "Seed: " << setw(8) << left << seed;
 	ss << "Screen: " << setw(6) << left << screen_counter;
 	addstr(ss.str().c_str());
+}
+
+bool Board::LineOfSight(Coordinate &player, Coordinate cell) {
+	return true;
 }
 
 void Board::PlaceStairs() {
@@ -459,7 +495,7 @@ bool Board::PlanBForCooridors(uint32_t room_index) {
 			closest_neighbor = i;
 		}
 	}
-	if (my_log.is_open()) {
+	if (false and my_log.is_open()) {
 		my_log << "Closest neighbor to room: " << room_index;
 		my_log << " is room: " << closest_neighbor << endl;
 	}
@@ -483,10 +519,9 @@ void Board::FlattenRooms() {
 		is_lit = rooms[room_index].is_lit;
 		// The region containing this cell will be flattened to the 
 		// value of this cell.
-		int32_t flattened_room_value = cells[c.r][c.c].original_c - '0';
+		int32_t flattened_room_value = rooms[room_index].room_number;
 
 		cells[c.r][c.c].has_been_added_to_work_list = true;
-		// Seed the work_list with the centroid's coordinate.
 		work_list.push_back(c);
 
 		// Here is the flood fill - remove an item from the work_list, process it
@@ -500,6 +535,7 @@ void Board::FlattenRooms() {
 
 			assert(cell.has_been_added_to_work_list);
 			assert(cell.base_type == ROOM);
+
 			cell.has_been_flattened = true;
 			cell.final_room_number = flattened_room_value;
 			cell.is_lit = is_lit;
@@ -527,6 +563,7 @@ void Board::FlattenRooms() {
 
 					cell.has_been_added_to_work_list = true;
 					work_list.push_back(e_c);
+
 					// if (my_log.is_open()) {
 					// 	my_log << "work list size is: " << work_list.size();
 					// 	my_log << " adding coordinate: " << e_c.to_string() << endl;
@@ -539,3 +576,35 @@ void Board::FlattenRooms() {
 	}
 }
 
+void Board::DebugPrintBoard(int32_t mode) {
+	if (!my_log.is_open())
+		return;
+
+	if (mode == 0)
+		my_log << "base_type\n";
+	else if (mode == 1)
+		my_log << "is_lit\n";
+	else if (mode == 2)
+		my_log << "is_known\n";
+
+	for (int32_t r = 0; r < BOARD_ROWS; r++) {
+		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
+			Cell & cell = cells[r][c];
+			switch (mode) {
+				case 0:
+					my_log << cell.base_type;
+					break;
+
+				case 1:
+					my_log << cell.is_lit;
+					break;
+
+				case 2:
+					my_log << cell.is_known;
+					break;
+			}
+		}
+		my_log << endl;
+	}
+	my_log << endl;
+}
