@@ -358,6 +358,9 @@ void InitializeCornerMap() {
 	corner_map["FVHHHF VF"] = ACS_RTEE;
 	corner_map[" VF HHHHF"] = ACS_LTEE;
 	corner_map["FVHFHFFVF"] = ACS_VLINE;
+	corner_map["FVVFHVFVF"] = ACS_LTEE;
+	corner_map["VVFHVFVFF"] = ACS_LRCORNER;
+	corner_map["H HHHVFVV"] = ACS_TTEE;
 }
 
 	// corner_map[""] = ACS_;
