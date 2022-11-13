@@ -34,8 +34,9 @@ private:
 	void PlaceCorridors();
 	void PlaceStairs();
 	Coordinate GetGoodStairLocation(Room & room);
-	void RemoveFloorDigits();
+	//void RemoveFloorDigits();
 	bool PlanBForCooridors(uint32_t room_index);
 	void FlattenRooms();
 	void LayCorridor(Coordinate &, Coordinate &);
+	void Show(bool show_original, int32_t r, int32_t c, const Cell & cell);
 };

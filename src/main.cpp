@@ -22,7 +22,7 @@ using namespace std;
 
 int32_t seed = 0;
 int32_t screen_counter = 0;
-bool show_floor = false;
+//bool show_floor = false;
 bool no_corridors = false;
 bool show_original = false;
 
@@ -56,12 +56,12 @@ bool StartLog() {
 bool HandleOptions(int argc, char **argv) {
 	int c;
 	bool retval = true;
-	while ((c = getopt(argc, argv, "cs:hlf")) != -1) {
+	while ((c = getopt(argc, argv, "cs:hl")) != -1) {
 		switch (c) {
 		case 'h':
 			cout << "Usage:\n";
 			cout << "-c no corridors\n";
-			cout << "-f shows the floor\n";
+			//cout << "-f shows the floor\n";
 			cout << "-h prints this help\n";
 			cout << "-l enables logging\n";
 			cout << "-s specifies random seed (omit for time of day)\n";
@@ -72,9 +72,9 @@ bool HandleOptions(int argc, char **argv) {
 			no_corridors = true;
 			break;
 
-		case 'f':
-			show_floor = true;
-			break;
+		//case 'f':
+		//	show_floor = true;
+		//	break;
 
 		case 's':
 			srand((seed = atoi(optarg)));

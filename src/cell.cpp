@@ -1,5 +1,5 @@
 #include "cell.hpp"
 
 Cell::Cell() {
-	c = display_c = 0;
+	original_c = display_c = 0;
 }

@@ -37,7 +37,7 @@ void Board::Clear() {
 void Board::FindRowsToAvoid(ivec &r_avoid) {
 	for (int32_t r = 0; r < BOARD_ROWS; r++) {
 		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
-			if (cells[r][c].c == ACS_HLINE) {
+			if (cells[r][c].original_c == ACS_HLINE) {
 				r_avoid.push_back(r);
 				break;
 			}
@@ -63,7 +63,7 @@ void Board::FindRowsToAvoid(ivec &r_avoid) {
 void Board::FindColsToAvoid(ivec &c_avoid) {
 	for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
 		for (int32_t r = 0; r < BOARD_ROWS; r++) {
-			if (cells[r][c].c == ACS_VLINE) {
+			if (cells[r][c].original_c == ACS_VLINE) {
 				c_avoid.push_back(c);
 				break;
 			}
@@ -167,6 +167,14 @@ void Board::PlaceCorridors() {
 	}
 }
 
+void MakeCorridore(Cell & c) {
+	if (isdigit(c.original_c))
+		return;
+	c.display_c = c.original_c = '#';
+	c.base_type = CORRIDOR;
+	c.final_room_number = -1;
+}
+
 void Board::LayCorridor(Coordinate & src, Coordinate & dst) {
 	if (src.c != dst.c) {
 		int32_t dc = (src.c < dst.c) ? 1 : -1;
@@ -174,10 +182,7 @@ void Board::LayCorridor(Coordinate & src, Coordinate & dst) {
 		for (int32_t c = src.c; c != dst.c; c += dc) {
 			if (c < 0 or c >= BOARD_COLUMNS)
 				break;
-			if (isdigit(cells[r][c].c))
-				continue;
-			cells[r][c].display_c = cells[r][c].c = '#'; //'0' + index;
-			cells[r][c].base_type = CORRIDOR;
+			MakeCorridore(cells[r][c]);
 		}
 	}
 	if (src.r != dst.r) {
@@ -186,10 +191,7 @@ void Board::LayCorridor(Coordinate & src, Coordinate & dst) {
 		for (int32_t r = src.r; r != dst.r; r += dr) {
 			if (r < 0 or r >= BOARD_ROWS)
 				break;
-			if (isdigit(cells[r][c].c))
-				continue;
-			cells[r][c].display_c = cells[r][c].c = '#'; //'0' + index;
-			cells[r][c].base_type = CORRIDOR;
+			MakeCorridore(cells[r][c]);
 		}
 	}
 }
@@ -215,13 +217,13 @@ string Board::BuildCornerKey(int32_t r, int32_t c) {
 				retval.push_back(' ');
 			else if (C < 0 or C >= BOARD_COLUMNS)
 				retval.push_back(' ');
-			else if (!cells[R][C].c)
+			else if (!cells[R][C].original_c)
 				retval.push_back(' ');
-			else if (isdigit(cells[R][C].c))
+			else if (isdigit(cells[R][C].original_c))
 				retval.push_back('F');
-			else if (cells[R][C].c == ACS_HLINE)
+			else if (cells[R][C].original_c == ACS_HLINE)
 				retval.push_back('H');
-			else if (cells[R][C].c == ACS_VLINE)
+			else if (cells[R][C].original_c == ACS_VLINE)
 				retval.push_back('V');
 			else {
 				retval.push_back(' ');
@@ -243,7 +245,7 @@ void Board::PlaceCorners() {
 			if (corner_map.count(key) != 0) {
 				cells[r][c].display_c = corner_map[key];
 			} else {
-				cells[r][c].display_c = cells[r][c].c;
+				cells[r][c].display_c = cells[r][c].original_c;
 			}
 		}
 	}
@@ -259,7 +261,7 @@ void Board::Fill(int32_t rn) {
 			assert(c > 0);
 			assert(r < BOARD_ROWS);
 			assert(c < BOARD_COLUMNS);
-			cells[r][c].c = '0' + rn;
+			cells[r][c].original_c = '0' + rn;
 			cells[r][c].display_c = '0' + rn;
 			cells[r][c].base_type = ROOM;
 			cells[r][c].is_lit = rm.is_lit;
@@ -269,7 +271,7 @@ void Board::Fill(int32_t rn) {
 
 inline void SetCell(Cell & cell, CellBaseType bt, int32_t c, bool il) {
 	cell.base_type = bt;
-	cell.c = c;
+	cell.original_c = c;
 	cell.is_lit = il;
 }
 
@@ -279,10 +281,10 @@ void Board::Enclose(int32_t rn) {
 		assert(r < BOARD_ROWS);
 		assert(rm.tl.c > 0);
 		assert(rm.br.c < BOARD_COLUMNS);
-		if (!cells[r][rm.tl.c - 1].c) {
+		if (!cells[r][rm.tl.c - 1].original_c) {
 			SetCell(cells[r][rm.tl.c - 1], WALL, ACS_VLINE, rm.is_lit);
 		}
-		if (!cells[r][rm.br.c].c) {
+		if (!cells[r][rm.br.c].original_c) {
 			SetCell(cells[r][rm.br.c], WALL, ACS_VLINE, rm.is_lit);
 		}
 	}
@@ -290,10 +292,10 @@ void Board::Enclose(int32_t rn) {
 		assert(c < BOARD_COLUMNS);
 		assert(rm.tl.r > 0);
 		assert(rm.br.r < BOARD_ROWS);
-		if (!cells[rm.tl.r - 1][c].c) {
+		if (!cells[rm.tl.r - 1][c].original_c) {
 			SetCell(cells[rm.tl.r - 1][c], WALL, ACS_HLINE, rm.is_lit);
 		}
-		if (!cells[rm.br.r][c].c) {
+		if (!cells[rm.br.r][c].original_c) {
 			SetCell(cells[rm.br.r][c], WALL, ACS_HLINE, rm.is_lit);
 		}
 	}
@@ -314,40 +316,58 @@ void Board::Create() {
 	if (!no_corridors) {
 		PlaceCorridors();
 	}
-	RemoveFloorDigits();
+	//RemoveFloorDigits();
 	FlattenRooms();
 	PlaceStairs();
 }
 
-void Board::RemoveFloorDigits() {
+/* void Board::RemoveFloorDigits() {
 	for (int32_t r = 0; r < BOARD_ROWS; r++) {
 		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
-			if (isdigit(cells[r][c].c)) {
-				cells[r][c].display_c = cells[r][c].c =
-					(show_floor) ? cells[r][c].c : ACS_BULLET;
+			if (isdigit(cells[r][c].original_c)) {
+				//cells[r][c].display_c =
+				//	(show_floor) ? cells[r][c].original_c : ACS_BULLET;
 			}
 		}
 	}
 }
+ */
+void Board::Show(bool show_original, int32_t r, int32_t c, const Cell & cell) {
+	if (show_original)
+		mvaddch(BOARD_TOP_OFFSET + r, c, cell.original_c);
+	else
+		mvaddch(BOARD_TOP_OFFSET + r, c, cell.display_c);
+}
 
 void Board::Display(Player & p, bool show_original) {
 	erase();
+	int32_t pfrn = cells[p.pos.r][p.pos.c].final_room_number;
+
 	for (int32_t r = 0; r < BOARD_ROWS; r++) {
 		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
 			Coordinate coord(r, c);
 			Cell & cell = cells[r][c];
-			if (cell.is_lit or coord.Distance(p.pos) < 2.5) {
-				if (cell.base_type == EMPTY)
-					continue;
-				if (cell.base_type == WALL or 
-					cell.base_type == CORRIDOR) {
-						cell.is_lit = true;
-				} else if (IsAStairway(coord))
-					cell.is_lit = true;
-				if (show_original)
-					mvaddch(BOARD_TOP_OFFSET + r, c, (cell.c) ? cell.c : ACS_BULLET);
-				else
-					mvaddch(BOARD_TOP_OFFSET + r, c, (cell.display_c) ? cell.display_c : ACS_BULLET);
+			// Don't show "nothing"
+			if (cell.base_type == EMPTY)
+				continue;
+			// If the cell is not in the same room as the player,
+			// don't show it.
+			if (cell.base_type == ROOM and 
+				cell.final_room_number != pfrn)
+				continue;
+			if ((cell.base_type == WALL or cell.base_type == CORRIDOR or IsAStairway(coord)) and cell.is_known)
+			{
+				// If the spot is a wall or hallway or stairway and we
+				// have seen the spot before then continue to render it.
+				Show(show_original, r, c, cell);
+				continue;
+			}
+
+			if (coord.Distance(p.pos) < 2.5) {
+				// If the spot is close to us, make it known.
+				cell.is_known = true;
+				Show(show_original, r, c, cell);
+				continue;
 			}
 		}
 	}
@@ -367,9 +387,11 @@ void Board::PlaceStairs() {
 	}
 	shuffle(room_numbers.begin(), room_numbers.end(), default_random_engine(rand()));
 	upstairs = GetGoodStairLocation(rooms[room_numbers[0]]);
-	cells[upstairs.r][upstairs.c].display_c = cells[upstairs.r][upstairs.c].c = UP_STAIRS;
+	cells[upstairs.r][upstairs.c].display_c = 
+		cells[upstairs.r][upstairs.c].original_c = UP_STAIRS;
 	downstairs = GetGoodStairLocation(rooms[room_numbers[1]]);
-	cells[downstairs.r][downstairs.c].display_c = cells[downstairs.r][downstairs.c].c = DOWN_STAIRS;
+	cells[downstairs.r][downstairs.c].display_c = 
+		cells[downstairs.r][downstairs.c].original_c = DOWN_STAIRS;
 	assert(upstairs != downstairs);
 }
 
@@ -378,7 +400,8 @@ bool Board::IsAStairway(Coordinate & c) {
 	    (c.c < 0 or c.c >= BOARD_COLUMNS))
 		return false;
 	assert(c.c >= 0 and c.c < BOARD_COLUMNS);
-	return (cells[c.r][c.c].c == UP_STAIRS) or (cells[c.r][c.c].c == DOWN_STAIRS);
+	return (cells[c.r][c.c].original_c == UP_STAIRS) or 
+			(cells[c.r][c.c].original_c == DOWN_STAIRS);
 }
 
 /*	Returns coordinates in Board space! The chosen coordinate is checked
@@ -401,11 +424,13 @@ Coordinate Board::GetGoodStairLocation(Room & room) {
 }
 
 bool Board::IsDownstairs(Coordinate & c) {
-	return IsAStairway(c) and cells[c.r][c.c].c == DOWN_STAIRS;
+	return IsAStairway(c) and 
+			cells[c.r][c.c].original_c == DOWN_STAIRS;
 }
 
 bool Board::IsUpstairs(Coordinate & c) {
-	return IsAStairway(c) and cells[c.r][c.c].c == UP_STAIRS;
+	return IsAStairway(c) and 
+			cells[c.r][c.c].original_c == UP_STAIRS;
 }
 
 /*	PlanBForCooridors() - this function attempts to find
@@ -451,12 +476,15 @@ void Board::FlattenRooms() {
 		bool is_lit;
 
 		Coordinate c = rooms[room_index].GetCentroid();
-		// If the centroid has already been flattened, the whole room has been flattened.
+		// If the centroid has already been flattened, the whole room 
+		// has been flattened.
 		if (cells[c.r][c.c].has_been_flattened)
 			continue;
 		is_lit = rooms[room_index].is_lit;
-		// The region containing this cell will be flattened to the value of this cell.
-		int32_t flattened_room_value = cells[c.r][c.c].c;
+		// The region containing this cell will be flattened to the 
+		// value of this cell.
+		int32_t flattened_room_value = cells[c.r][c.c].original_c - '0';
+
 		cells[c.r][c.c].has_been_added_to_work_list = true;
 		// Seed the work_list with the centroid's coordinate.
 		work_list.push_back(c);
@@ -473,9 +501,9 @@ void Board::FlattenRooms() {
 			assert(cell.has_been_added_to_work_list);
 			assert(cell.base_type == ROOM);
 			cell.has_been_flattened = true;
-			cell.c = flattened_room_value;
+			cell.final_room_number = flattened_room_value;
 			cell.is_lit = is_lit;
-			cell.display_c = flattened_room_value;
+			cell.display_c = ACS_BULLET;
 
 			for (int32_t dr = -1; dr <= 1; dr++) {
 				for (int32_t dc = -1; dc <= 1; dc++) {
