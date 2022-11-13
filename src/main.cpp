@@ -164,20 +164,22 @@ void HandleMovement(Board & b, Player & p, int32_t c, int32_t numeric_qualifier)
 		}
 		if (b.cells[ppos.r][ppos.c].base_type == ROOM or
 			b.cells[ppos.r][ppos.c].base_type == CORRIDOR) {
+			if (IsTransitioningBetweenCooridorAndRoom(
+				initial_position_type, 
+				b.cells[ppos.r][ppos.c].base_type) and
+				numeric_qualifier > 0
+			) {
+				break;
+			}
 			p.pos = ppos;
 			b.Display(p, show_original);
 			p.Display();
 			refresh();
-			if (numeric_qualifier > 0) {
-				usleep(30000);
+			if (b.IsAStairway(p.pos)) {
+				break;
 			}
-			if (IsTransitioningBetweenCooridorAndRoom(
-				initial_position_type, 
-				b.cells[ppos.r][ppos.c].base_type)
-			) {
-				break;
-			} else if (b.IsAStairway(p.pos)) {
-				break;
+			if (numeric_qualifier > 0) {
+				usleep(20000);
 			}
 		} else {
 			break;
