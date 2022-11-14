@@ -51,3 +51,12 @@ is handled - all room cells are handled the same way and honor a more
 "real-world" ethos. The idea of keeping a notebook is a reasonable one.
 Marking stairs, walls and corridors would make sense to add to your
 notebook as you explore the caves.
+
+## Running
+
+You cannot run *into* a room. Even if you are standing in a corridor
+which is leading into a room, you will have to walk into the room before
+you can run in the room.
+
+Once you're in a hallway, you can run in the hallway but you will stop
+prior to transitioning into a room.

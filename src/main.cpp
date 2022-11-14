@@ -105,7 +105,6 @@ bool IsTransitioningBetweenCooridorAndRoom(CellBaseType a, CellBaseType b) {
 */
 void HandleMovement(Board * b, Player & p, int32_t c, int32_t numeric_qualifier) {
 	Coordinate ppos = p.pos;
-	CellBaseType initial_position_type = b->cells[p.pos.r][p.pos.c].base_type;
 
 	if (isupper(c)) {
 		// A capital letter movement character means RUN!
@@ -161,16 +160,18 @@ void HandleMovement(Board * b, Player & p, int32_t c, int32_t numeric_qualifier)
 			ppos.c >= BOARD_COLUMNS or
 			ppos.r >= BOARD_ROWS
 		) {
+			assert(false);
 			return;
 		}
-		if (b->cells[ppos.r][ppos.c].base_type == ROOM or
-			b->cells[ppos.r][ppos.c].base_type == CORRIDOR) {
+		if (b->IsNavigable(ppos)) {
 			if (IsTransitioningBetweenCooridorAndRoom(
-				initial_position_type, 
+				b->cells[p.pos.r][p.pos.c].base_type, 
 				b->cells[ppos.r][ppos.c].base_type) and
 				numeric_qualifier > 0
 			) {
-				break;
+				numeric_qualifier = 0;
+				if (b->cells[p.pos.r][p.pos.c].base_type == CORRIDOR)
+					break;
 			}
 			p.pos = ppos;
 			b->Display(p, show_original);
@@ -212,6 +213,13 @@ int main(int argc, char * argv[]) {
 	if (my_log.is_open())
 		my_log << "Player: " << player.pos.to_string() << endl;
 	while (c != 'q') {
+		// Some commands can be prefaced by a numeric qualifier
+		// such as 22l for walk right 22 spaces. If the current
+		// character is a digit add it to the end of a string.
+		// If not a digit, turn any accumulated string into an
+		// integer (if non-empty) making it ready for commands
+		// that accept a numeric qualifier. Zero out the string
+		// after that.
 		if (!isdigit(c)) {
 			if (digit_accumulator.size() > 0) {
 				numeric_qualifier = stoi(digit_accumulator);
@@ -220,11 +228,17 @@ int main(int argc, char * argv[]) {
 		} else if (isdigit(c)) {
 			digit_accumulator.push_back(c);
 		}
+
 		if (c == 't') {
 			show_original = !show_original;
 		} else if (IsMovementChar(c)) {
 			HandleMovement(board, player, c, numeric_qualifier);
 		} else if (c == '>' and board->IsDownstairs(player.pos)) {
+			// We want to go down. If we are on the most recently
+			// created level, create a new one and push it only our
+			// vector of created levels.
+			// If we are not on the deepest board, simply shift to
+			// the next level down.
 			if (current_board == boards.size() - 1) {
 				board = new Board();
 				boards.push_back(board);
@@ -234,9 +248,11 @@ int main(int argc, char * argv[]) {
 				board = boards.at(current_board);
 			}
 			player.pos = board->upstairs;
-			if (my_log.is_open())
-				my_log << "Player: " << player.pos.to_string() << endl;
 		} else if (c == '<') {
+			// We want to go up. We can do this if we are on an
+			// upward staircase AND we're not on the 0th level.
+			// NetHack has the AstralPlane above level 0. We do
+			// not. Yet.
 			if (board->IsUpstairs(player.pos) and current_board > 0) {
 				current_board--;
 				board = boards.at(current_board);
@@ -246,11 +262,13 @@ int main(int argc, char * argv[]) {
 		board->Display(player, show_original);
 		player.Display();
 		refresh();
-
+		// Do not carry over any numeric qualifiers.
+		numeric_qualifier = 0;
+		// Poll the keyboard, sleeping for a short time
+		// if no character was available at the time of
+		// polling.
 		while (true) {
-			if ((c = getch()) == 'q')
-				break;
-			if (c == ERR)
+			if ((c = getch()) == ERR)
 				usleep(50000);
 			else
 				break;

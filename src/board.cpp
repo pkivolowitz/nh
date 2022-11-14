@@ -20,6 +20,11 @@ Board::Board() {
 	Create();
 }
 
+bool Board::IsNavigable(Coordinate & c) {
+	return cells[c.r][c.c].base_type == ROOM or
+		cells[c.r][c.c].base_type == CORRIDOR;
+}
+
 /*	Clear() - This function zeros out the Board data structure making
 	ready for the next newly created level. Note that the use of memset
 	means that if Cell someday has need of a destructure, this code will

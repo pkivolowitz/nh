@@ -17,7 +17,8 @@ struct Board {
 	bool IsDownstairs(Coordinate & c);
 	bool IsUpstairs(Coordinate & c);
 	bool IsAStairway(Coordinate &);
-
+	bool IsNavigable(Coordinate &);
+	
 	Coordinate upstairs;
 	Coordinate downstairs;
 
