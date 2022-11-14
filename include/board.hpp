@@ -10,9 +10,9 @@
 using ivec = std::vector<int32_t>;
 
 struct Board {
+	Board();
+
 	Cell cells[BOARD_ROWS][BOARD_COLUMNS];
-	void Clear();
-	void Create();
 	void Display(Player & p, bool show_original, double tr = 2.5);
 	bool IsDownstairs(Coordinate & c);
 	bool IsUpstairs(Coordinate & c);
@@ -27,6 +27,8 @@ struct Board {
 
 private:
 	std::string BuildCornerKey(int32_t r, int32_t c);
+	void Clear();
+	void Create();
 	void FindRowsToAvoid(ivec &r_avoid);
 	void FindColsToAvoid(ivec &c_avoid);
 	void FindGCoords(ivec &br, ivec &bc, Room &r, Coordinate &coord);

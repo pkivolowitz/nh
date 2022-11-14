@@ -15,6 +15,11 @@ using namespace std;
 extern ofstream my_log;
 extern bool show_floor;
 
+Board::Board() {
+	Clear();
+	Create();
+}
+
 /*	Clear() - This function zeros out the Board data structure making
 	ready for the next newly created level. Note that the use of memset
 	means that if Cell someday has need of a destructure, this code will
@@ -341,6 +346,8 @@ void Board::Show(bool show_original, Coordinate & coord, const Cell & cell) {
 }
 
 void Board::Display(Player & p, bool show_original, double tr) {
+	extern uint32_t current_board;
+	
 	erase();
 	//int32_t pfrn = cells[p.pos.r][p.pos.c].final_room_number;
 
@@ -404,7 +411,7 @@ void Board::Display(Player & p, bool show_original, double tr) {
 	move(0, 0);
 	stringstream ss;
 	ss << "Seed: " << setw(4) << left << seed;
-	ss << "Screen: " << setw(4) << left << screen_counter;
+	ss << "Board: " << setw(4) << left << current_board;
 	ss << "PPOS: " << p.pos.to_string();
 	addstr(ss.str().c_str());
 }

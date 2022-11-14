@@ -21,7 +21,8 @@
 using namespace std;
 
 int32_t seed = 0;
-int32_t screen_counter = 0;
+uint32_t current_board = 0;
+
 //bool show_floor = false;
 bool no_corridors = false;
 bool show_original = false;
@@ -102,9 +103,9 @@ bool IsTransitioningBetweenCooridorAndRoom(CellBaseType a, CellBaseType b) {
 	qualification of movement by a numeric value. By handling the update
 	here, we can impose a delay (and animate the movement).
 */
-void HandleMovement(Board & b, Player & p, int32_t c, int32_t numeric_qualifier) {
+void HandleMovement(Board * b, Player & p, int32_t c, int32_t numeric_qualifier) {
 	Coordinate ppos = p.pos;
-	CellBaseType initial_position_type = b.cells[p.pos.r][p.pos.c].base_type;
+	CellBaseType initial_position_type = b->cells[p.pos.r][p.pos.c].base_type;
 
 	if (isupper(c)) {
 		// A capital letter movement character means RUN!
@@ -162,20 +163,20 @@ void HandleMovement(Board & b, Player & p, int32_t c, int32_t numeric_qualifier)
 		) {
 			return;
 		}
-		if (b.cells[ppos.r][ppos.c].base_type == ROOM or
-			b.cells[ppos.r][ppos.c].base_type == CORRIDOR) {
+		if (b->cells[ppos.r][ppos.c].base_type == ROOM or
+			b->cells[ppos.r][ppos.c].base_type == CORRIDOR) {
 			if (IsTransitioningBetweenCooridorAndRoom(
 				initial_position_type, 
-				b.cells[ppos.r][ppos.c].base_type) and
+				b->cells[ppos.r][ppos.c].base_type) and
 				numeric_qualifier > 0
 			) {
 				break;
 			}
 			p.pos = ppos;
-			b.Display(p, show_original);
+			b->Display(p, show_original);
 			p.Display();
 			refresh();
-			if (b.IsAStairway(p.pos)) {
+			if (b->IsAStairway(p.pos)) {
 				break;
 			}
 			if (numeric_qualifier > 0) {
@@ -189,7 +190,10 @@ void HandleMovement(Board & b, Player & p, int32_t c, int32_t numeric_qualifier)
 
 int main(int argc, char * argv[]) {
 	srand(uint32_t(time(nullptr)));
-	Board board;
+	
+	vector<Board *> boards;
+	Board * board;
+
 	Player player;
 	string digit_accumulator;
 	int32_t numeric_qualifier = 0;		// 0 means none.
@@ -199,10 +203,12 @@ int main(int argc, char * argv[]) {
 
 	InitCurses();
 	InitializeCornerMap();
+
+	board = new Board();
+	boards.push_back(board);
+
 	int32_t c = 0;
-	board.Clear();
-	board.Create();
-	player.pos = board.upstairs;
+	player.pos = board->upstairs;
 	if (my_log.is_open())
 		my_log << "Player: " << player.pos.to_string() << endl;
 	while (c != 'q') {
@@ -217,20 +223,32 @@ int main(int argc, char * argv[]) {
 		if (c == 't')
 			show_original = !show_original;
 		if (c == 'r') {
-down:		screen_counter++;
-			board.Clear();
-			board.Create();
-			player.pos = board.upstairs;
+down:		if (current_board == boards.size() - 1) {
+				delete board;
+				board = new Board();
+				boards.push_back(board);
+				current_board++;
+			} else {
+				current_board++;
+				board = boards.at(current_board);
+			}
+			player.pos = board->upstairs;
 			if (my_log.is_open())
 				my_log << "Player: " << player.pos.to_string() << endl;
 		} else if (IsMovementChar(c)) {
 			HandleMovement(board, player, c, numeric_qualifier);
 		} else if (c == '>') {
-			if (board.IsDownstairs(player.pos)) {
+			if (board->IsDownstairs(player.pos)) {
 				goto down;
 			}
+		} else if (c == '<') {
+			if (board->IsUpstairs(player.pos) and current_board > 0) {
+				current_board--;
+				board = boards.at(current_board);
+				player.pos = board->downstairs;
+			}
 		}
-		board.Display(player, show_original);
+		board->Display(player, show_original);
 		player.Display();
 		refresh();
 
