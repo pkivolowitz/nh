@@ -220,11 +220,12 @@ int main(int argc, char * argv[]) {
 		} else if (isdigit(c)) {
 			digit_accumulator.push_back(c);
 		}
-		if (c == 't')
+		if (c == 't') {
 			show_original = !show_original;
-		if (c == 'r') {
-down:		if (current_board == boards.size() - 1) {
-				delete board;
+		} else if (IsMovementChar(c)) {
+			HandleMovement(board, player, c, numeric_qualifier);
+		} else if (c == '>' and board->IsDownstairs(player.pos)) {
+			if (current_board == boards.size() - 1) {
 				board = new Board();
 				boards.push_back(board);
 				current_board++;
@@ -235,12 +236,6 @@ down:		if (current_board == boards.size() - 1) {
 			player.pos = board->upstairs;
 			if (my_log.is_open())
 				my_log << "Player: " << player.pos.to_string() << endl;
-		} else if (IsMovementChar(c)) {
-			HandleMovement(board, player, c, numeric_qualifier);
-		} else if (c == '>') {
-			if (board->IsDownstairs(player.pos)) {
-				goto down;
-			}
 		} else if (c == '<') {
 			if (board->IsUpstairs(player.pos) and current_board > 0) {
 				current_board--;
