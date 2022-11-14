@@ -1,5 +1,13 @@
 # PNH - Perry's NetHack
 
+## Stairways
+
+Unlike NetHack, up and down stairs in PNH can be in the same room.
+
+Stairways are automatically entered into your notebook as you
+encounter them (and will remain visible after you leave the room
+in which they are found).
+
 ## Doorways
 
 There are no doors in PNH. You're roaming underground caverns.
