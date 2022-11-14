@@ -257,6 +257,11 @@ int main(int argc, char * argv[]) {
 		}
 	}
 
+	while (!boards.empty()) {
+		board = boards.back();
+		delete board;
+		boards.pop_back();
+	}
 	if (my_log.is_open())
 		my_log.close();
 	TakedownCurses();
