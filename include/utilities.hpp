@@ -15,3 +15,4 @@ static const int32_t BOARD_TOP_OFFSET = 1;
 static const int32_t BOARD_STATUS_OFFSET = BOARD_ROWS + BOARD_TOP_OFFSET;
 
 extern int32_t seed;
+extern int32_t turn_counter;
