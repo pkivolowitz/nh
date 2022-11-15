@@ -332,17 +332,14 @@ void Board::Create() {
 	//DebugPrintBoard(2);
 }
 
-/* void Board::RemoveFloorDigits() {
-	for (int32_t r = 0; r < BOARD_ROWS; r++) {
-		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
-			if (isdigit(cells[r][c].original_c)) {
-				//cells[r][c].display_c =
-				//	(show_floor) ? cells[r][c].original_c : ACS_BULLET;
-			}
-		}
-	}
+/*	MakeKinks - this function will look for long runs of horizontal
+	hallways which emptiness above and below. If long enough, the run
+	could be interrupted by a kink, either up or down or might have a
+	deadend branch added to it. This is for someday.
+*/
+void Board::MakeKinks() {
 }
- */
+
 void Board::Show(bool show_original, Coordinate & coord, const Cell & cell) {
 	if (show_original)
 		mvaddch(BOARD_TOP_OFFSET + coord.r, coord.c, cell.original_c);

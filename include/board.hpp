@@ -38,6 +38,7 @@ private:
 	void PlaceCorners();
 	void PlaceCorridors();
 	void PlaceStairs();
+	void MakeKinks();
 	Coordinate GetGoodStairLocation(Room & room);
 	//void RemoveFloorDigits();
 	bool PlanBForCooridors(uint32_t room_index);
@@ -45,4 +46,10 @@ private:
 	void LayCorridor(Coordinate &, Coordinate &);
 	void Show(bool show_original, Coordinate & coord, const Cell & cell);
 	bool LineOfSight(Coordinate & player, Coordinate & cell);
+	
+	inline bool IsCorridor(int32_t r, int32_t c) {
+		assert(r >= 0 and r < BOARD_ROWS);
+		assert(c >= 0 and c < BOARD_COLUMNS);
+		return cells[r][c].base_type == CORRIDOR;	
+	}
 };
