@@ -32,6 +32,7 @@ struct Board {
 	static const int32_t MAX_ROOMS = 9;
 
 private:
+	std::string BuildCornerKey(Coordinate & c);
 	std::string BuildCornerKey(int32_t r, int32_t c);
 	void Clear();
 	void Create();
@@ -62,7 +63,14 @@ private:
 		return cells[r][c].base_type == CORRIDOR;	
 	}
 
+	inline bool IsEmpty(Coordinate & c) {
+		return cells[c.r][c.c].base_type == EMPTY;
+	}
+
 	inline bool IsNeighbor(Coordinate & a, Coordinate & b) {
 		return abs(a.r - b.r) <= 1 and abs(a.c - b.c) <= 1;
 	}
+
+	void MakeCorridor(Coordinate &c);
+	void MakeCorridor(Cell &c);
 };
