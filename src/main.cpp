@@ -22,6 +22,7 @@
 using namespace std;
 
 int32_t seed = 0;
+int32_t turn_counter = 0;
 uint32_t current_board = 0;
 CursesColorSupport ccs;
 
@@ -159,13 +160,10 @@ void HandleMovement(Board * b, Player & p, int32_t c, int32_t numeric_qualifier)
 				break;
 		}
 
-		// Should not be needed so if this trips, we REALLY
-		// want to know.
 		if (ppos.c < 0 or ppos.r < 0 or 
 			ppos.c >= BOARD_COLUMNS or ppos.r >= BOARD_ROWS
 		) {
-			assert(false);
-			return;			// For release mode.
+			return;
 		}
 
 		// We've run into a wall or corner in corridor.
@@ -188,6 +186,7 @@ void HandleMovement(Board * b, Player & p, int32_t c, int32_t numeric_qualifier)
 			p.pos = ppos;
 		}
 
+		turn_counter++;
 		b->Display(p, show_original);
 		p.Display();
 		refresh();
@@ -246,12 +245,13 @@ int main(int argc, char * argv[]) {
 		} else if (IsMovementChar(c)) {
 			HandleMovement(board, player, c, numeric_qualifier);
 		} else if (c == '>' and board->IsDownstairs(player.pos)) {
+			turn_counter++;
 			// We want to go down. If we are on the most recently
 			// created level, create a new one and push it only our
 			// vector of created levels.
 			// If we are not on the deepest board, simply shift to
 			// the next level down.
-			if (current_board == boards.size() - 1) {
+down:		if (current_board == boards.size() - 1) {
 				board = new Board();
 				boards.push_back(board);
 				current_board++;
@@ -260,12 +260,15 @@ int main(int argc, char * argv[]) {
 				board = boards.at(current_board);
 			}
 			player.pos = board->upstairs;
+		} else if (c == 'd') {
+			goto down;
 		} else if (c == '<') {
 			// We want to go up. We can do this if we are on an
 			// upward staircase AND we're not on the 0th level.
 			// NetHack has the AstralPlane above level 0. We do
 			// not. Yet.
 			if (board->IsUpstairs(player.pos) and current_board > 0) {
+				turn_counter++;
 				current_board--;
 				board = boards.at(current_board);
 				player.pos = board->downstairs;
