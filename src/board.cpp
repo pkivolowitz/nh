@@ -9,15 +9,24 @@
 
 #include "board.hpp"
 #include "drawing_support.hpp"
+#include "colors.hpp"
 
 using namespace std;
 
 extern ofstream my_log;
 extern bool show_floor;
 
+static GameTime gt;
+
 Board::Board() {
 	Clear();
 	Create();
+}
+
+void Board::UpdateTime() {
+	string current_time = gt.GetCurrentTime();
+	mvaddstr(0, COLS - 8, current_time.c_str());
+	refresh();
 }
 
 bool Board::IsNavigable(Coordinate & c) {
@@ -340,18 +349,36 @@ void Board::Create() {
 void Board::MakeKinks() {
 }
 
+void SetAttributes(bool on, int32_t c) {
+	int (*func)(WINDOW *, attr_t, void *) = on ? wattr_on : wattr_off;
+	attr_t a = A_NORMAL;
+
+	if (c == ACS_BULLET)
+		a = A_LOW;
+	else if (c == '#')
+		a = A_DIM;
+	else if (c == '<')
+		a = A_BOLD;
+	else if (c == '>')
+		a = A_BOLD;
+
+	(*func)(stdscr, a, nullptr);
+}
+
 void Board::Show(bool show_original, Coordinate & coord, const Cell & cell) {
 	if (show_original)
 		mvaddch(BOARD_TOP_OFFSET + coord.r, coord.c, cell.original_c);
-	else
+	else {
+		SetAttributes(true, cell.display_c);
 		mvaddch(BOARD_TOP_OFFSET + coord.r, coord.c, cell.display_c);
+		SetAttributes(false, cell.display_c);
+	}
 }
 
 void Board::Display(Player & p, bool show_original, double tr) {
 	extern uint32_t current_board;
 	
 	erase();
-	//int32_t pfrn = cells[p.pos.r][p.pos.c].final_room_number;
 
 	for (int32_t r = 0; r < BOARD_ROWS; r++) {
 		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
@@ -410,12 +437,17 @@ void Board::Display(Player & p, bool show_original, double tr) {
 	if (my_log.is_open())
 		my_log << endl;
 
+	UpdateTime();
 	move(0, 0);
 	stringstream ss;
 	ss << "Seed: " << setw(4) << left << seed;
 	ss << "Board: " << setw(4) << left << current_board;
 	ss << "PPOS: " << p.pos.to_string();
+	attron(COLOR_PAIR(CLR_EMPTY));
+	//attron(A_BOLD);
 	addstr(ss.str().c_str());
+	//attroff(A_BOLD);
+	attroff(COLOR_PAIR(CLR_EMPTY));
 }
 
 bool Board::LineOfSight(Coordinate &p, Coordinate & other) {

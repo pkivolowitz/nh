@@ -17,11 +17,13 @@
 #include "room.hpp"
 #include "board.hpp"
 #include "player.hpp"
+#include "colors.hpp"
 
 using namespace std;
 
 int32_t seed = 0;
 uint32_t current_board = 0;
+CursesColorSupport ccs;
 
 //bool show_floor = false;
 bool no_corridors = false;
@@ -31,6 +33,8 @@ ofstream my_log;
 
 void InitCurses() {
 	initscr();
+	ccs.Initialize();
+	standend();
 	noecho();
 	raw();
 	curs_set(0);
@@ -276,9 +280,10 @@ int main(int argc, char * argv[]) {
 		// if no character was available at the time of
 		// polling.
 		while (true) {
-			if ((c = getch()) == ERR)
+			if ((c = getch()) == ERR) {
 				usleep(50000);
-			else
+				board->UpdateTime();
+			} else
 				break;
 		}
 	}

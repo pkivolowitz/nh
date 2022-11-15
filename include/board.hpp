@@ -6,6 +6,7 @@
 #include "cell.hpp"
 #include "room.hpp"
 #include "player.hpp"
+#include "game_time.hpp"
 
 using ivec = std::vector<int32_t>;
 
@@ -18,6 +19,7 @@ struct Board {
 	bool IsUpstairs(Coordinate & c);
 	bool IsAStairway(Coordinate &);
 	bool IsNavigable(Coordinate &);
+	void UpdateTime();
 	
 	Coordinate upstairs;
 	Coordinate downstairs;
