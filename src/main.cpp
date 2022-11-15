@@ -115,6 +115,7 @@ void HandleMovement(Board * b, Player & p, int32_t c, int32_t numeric_qualifier)
 	if (numeric_qualifier == 0) {
 		numeric_qualifier = 1;
 	}
+	bool first_step = true;
 	while (numeric_qualifier-- > 0) {
 		switch (tolower(c)) {
 			case 'h':		// Left
@@ -154,38 +155,45 @@ void HandleMovement(Board * b, Player & p, int32_t c, int32_t numeric_qualifier)
 				break;
 		}
 
-		// Should not be needed but cannot hurt.
-		if (ppos.c < 0 or 
-			ppos.r < 0 or 
-			ppos.c >= BOARD_COLUMNS or
-			ppos.r >= BOARD_ROWS
+		// Should not be needed so if this trips, we REALLY
+		// want to know.
+		if (ppos.c < 0 or ppos.r < 0 or 
+			ppos.c >= BOARD_COLUMNS or ppos.r >= BOARD_ROWS
 		) {
 			assert(false);
-			return;
+			return;			// For release mode.
 		}
-		if (b->IsNavigable(ppos)) {
-			if (IsTransitioningBetweenCooridorAndRoom(
-				b->cells[p.pos.r][p.pos.c].base_type, 
-				b->cells[ppos.r][ppos.c].base_type) and
-				numeric_qualifier > 0
-			) {
-				numeric_qualifier = 0;
-				if (b->cells[p.pos.r][p.pos.c].base_type == CORRIDOR)
-					break;
-			}
-			p.pos = ppos;
-			b->Display(p, show_original);
-			p.Display();
-			refresh();
-			if (b->IsAStairway(p.pos)) {
-				break;
-			}
-			if (numeric_qualifier > 0) {
-				usleep(20000);
-			}
+
+		// We've run into a wall or corner in corridor.
+		if (!b->IsNavigable(ppos))
+			break;
+
+		CellBaseType current = b->cells[p.pos.r][p.pos.c].base_type;
+		CellBaseType next = b->cells[ppos.r][ppos.c].base_type;
+
+		// The current and next cells are of different base_type. For
+		// example, (CORRIDOR and ROOM) or (ROOM and CORRIDOR). If this
+		// is not our first step, then cause the number of additional
+		// steps to be taken to be 0 AND make sure our last position is
+		// the hallway and not the room.
+		if (current != next and !first_step) {
+			numeric_qualifier = 0;
+			if (current == ROOM)
+				p.pos = ppos;
 		} else {
+			p.pos = ppos;
+		}
+
+		b->Display(p, show_original);
+		p.Display();
+		refresh();
+		if (b->IsAStairway(p.pos)) {
 			break;
 		}
+		if (numeric_qualifier > 0) {
+			usleep(20000);
+		}
+		first_step = false;
 	}
 }
 
