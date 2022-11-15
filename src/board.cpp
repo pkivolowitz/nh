@@ -320,8 +320,6 @@ void Board::Enclose(int32_t rn) {
 
 void Board::Create() {
 	extern bool no_corridors;
-	const int32_t MIN_ROOMS = 5;
-	const int32_t MAX_ROOMS = 9;
 	int32_t room_count = RR(MIN_ROOMS, MAX_ROOMS);
 	rooms.resize(room_count);
 	for (uint32_t rn = 0; rn < rooms.size(); rn++) {
@@ -394,18 +392,16 @@ void Board::Display(Player & p, bool show_original, double tr) {
 				continue;
 			}
 
-			// If a cell is:
-			//	- not a stairway and 
-			//	- is a room and
-			//	- it belongs to a room other than that the player is in
-			// then don't show it.
-			/* if (cell.base_type == ROOM and 
-				cell.final_room_number != pfrn and
-				!IsAStairway(coord))
-			{
-					continue;
+			/* 	Attempt at limiting visibility of walls you ought not
+				be able to see. This is a nice idea but comes with its
+				own set of problems so is left out.
+			*/
+			if (IsCorridor(p.pos) and cell.base_type == WALL and
+				!cell.is_known and !IsNeighbor(p.pos, coord)
+			) {
+				continue;
 			}
- */
+
 			// Always show walls, corridors and stairs if they are known.
 			if (
 				(cell.base_type == WALL or 

@@ -10,8 +10,8 @@ static inline int32_t RR(int32_t min = 0, int32_t max = RAND_MAX) {
 }
 
 static const int32_t BOARD_COLUMNS = 80;
-static const int32_t BOARD_ROWS = 20;
-static const int32_t BOARD_TOP_OFFSET = 2;
+static const int32_t BOARD_ROWS = 21;
+static const int32_t BOARD_TOP_OFFSET = 1;
+static const int32_t BOARD_STATUS_OFFSET = BOARD_ROWS + BOARD_TOP_OFFSET;
 
 extern int32_t seed;
-extern int32_t screen_counter;
