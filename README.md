@@ -52,11 +52,70 @@ is handled - all room cells are handled the same way and honor a more
 Marking stairs, walls and corridors would make sense to add to your
 notebook as you explore the caves.
 
-## Running
+## Spells
 
-You cannot run *into* a room. Even if you are standing in a corridor
-which is leading into a room, you will have to walk into the room before
-you can run in the room.
+There are many spells in NetHack. There are anticipated to be fewer in
+PNH however, the way in which spells are cast in PNH allows for one PNH
+spell to do the work of potentially several from NetHack.
 
-Once you're in a hallway, you can run in the hallway but you will stop
-prior to transitioning into a room.
+NetHack spellcasting requires:
+
+* knowledge of a spell
+
+* sufficient player level to master a spell
+
+* sufficient power points to cast a spell
+
+NetHack spell knowledge expires after a fixed number of turns past
+learning or relearning.
+
+A small number of NetHack spells vary their behavior based upon the
+mastery of the spell class (attack, for example).
+
+All NetHack spells require a single turn to cast.
+
+Spellcasting in PNH requires:
+
+* knowledge of a spell
+
+* sufficient player level to cast at desired power
+
+* sufficient Concentration points to cast at desired power
+
+Most PNH spells vary their behavior based upon the amount of
+Concentration the caster is willing to spend.
+
+PNH spell knowledge retention is based on practice and use of the spell.
+Spells used frequently, for example, become second nature and will never
+be forgotten.
+
+Higher Concentration expends more concentration points, takes longer
+to cast and imparts more powerful effects.
+
+### Spells and Concentration
+
+The NetHack Power stat is replaced in PNH by the Concentration stat
+(CStat). The CStat factors into many aspects of the player's capability,
+not just spellcasting.
+
+Spells maybe be cast at varying levels of Concentration, ranging from 1
+to 5 roughly equating to the power of the spell.
+
+### Fireball --> Fire
+
+Fireball in NH is an attack spell. Fire in PNH serves multiple roles
+depending upon the Concentration applied by the caster.
+
+Concentration 1 Fire spells require 1 turn to cast and have a maximum
+range of 0. That is, it is akin to lighting a match (and as
+such can minimally illuminate your surroundings briefly or light
+something in your possession on fire).
+
+Concentration 2 through 4 Fire spells require 2 turns to cast and have
+a maximum range of twice the Concentration used subject to practice.
+
+Fire cast at Concentration levels 2 through 5 continue to burn for
+up to four times the Concentration used turns subject to practice. While
+burning, the fire illuminates its surroundings and continues to do
+damage to anything within its flames. Damage caused by a fire spell is
+similarly enhanced by increased Concentration.
