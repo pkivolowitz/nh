@@ -186,7 +186,11 @@ void Board::PlaceCorridors() {
 	}
 }
 
-void MakeCorridore(Cell & c) {
+void Board::MakeCorridor(Coordinate & c) {
+	MakeCorridor(cells[c.r][c.c]);
+}
+
+void Board::MakeCorridor(Cell & c) {
 	if (isdigit(c.original_c))
 		return;
 	c.display_c = c.original_c = '#';
@@ -195,13 +199,31 @@ void MakeCorridore(Cell & c) {
 }
 
 void Board::LayCorridor(Coordinate & src, Coordinate & dst) {
+	vector<Coordinate> seeds;
+
 	if (src.c != dst.c) {
 		int32_t dc = (src.c < dst.c) ? 1 : -1;
 		int32_t r = src.r;
 		for (int32_t c = src.c; c != dst.c; c += dc) {
 			if (c < 0 or c >= BOARD_COLUMNS)
 				break;
-			MakeCorridore(cells[r][c]);
+			MakeCorridor(cells[r][c]);
+			if (RR(1,100) < 5)
+				seeds.push_back(Coordinate(r,c));
+		}
+	}
+	for (Coordinate & c : seeds) {
+		if (BuildCornerKey(c) == "         ") {
+			int32_t delta_r = (RR() & 1) ? 1 : -1;
+			int32_t nspaces = RR(2, 5);
+			while (nspaces-- > 0) {
+				c.r += delta_r;
+				if (c.r < 0 or c.r >= BOARD_ROWS)
+					break;
+				if (!IsEmpty(c))
+					break;
+				MakeCorridor(c);
+			}
 		}
 	}
 	if (src.r != dst.r) {
@@ -210,7 +232,7 @@ void Board::LayCorridor(Coordinate & src, Coordinate & dst) {
 		for (int32_t r = src.r; r != dst.r; r += dr) {
 			if (r < 0 or r >= BOARD_ROWS)
 				break;
-			MakeCorridore(cells[r][c]);
+			MakeCorridor(cells[r][c]);
 		}
 	}
 }
@@ -251,6 +273,10 @@ string Board::BuildCornerKey(int32_t r, int32_t c) {
 	}
 
 	return retval;
+}
+
+string Board::BuildCornerKey(Coordinate & c) {
+	return BuildCornerKey(c.r, c.c);
 }
 
 /*	PlaceCorners() - populate each cell's display_c with a special
@@ -351,8 +377,11 @@ void SetAttributes(bool on, int32_t c) {
 	int (*func)(WINDOW *, attr_t, void *) = on ? wattr_on : wattr_off;
 	attr_t a = A_NORMAL;
 
+	// A_BOLD is non-operative on line drawing characters.
+	// A_DIM is non-operative on MacOS terminal.
+	
 	if (c == ACS_BULLET)
-		a = A_LOW;
+		a = A_DIM;
 	else if (c == '#')
 		a = A_DIM;
 	else if (c == '<')
@@ -434,11 +463,12 @@ void Board::Display(Player & p, bool show_original, double tr) {
 		my_log << endl;
 
 	UpdateTime();
-	move(0, 0);
+	move(BOARD_STATUS_OFFSET, 0);
 	stringstream ss;
 	ss << "Seed: " << setw(4) << left << seed;
-	ss << "Board: " << setw(4) << left << current_board;
-	ss << "PPOS: " << p.pos.to_string();
+	ss << "Board: " << setw(3) << left << current_board;
+	ss << "PPOS: " << setw(8) << p.pos.to_string();
+	ss << "Turn: " << setw(5) << turn_counter;
 	attron(COLOR_PAIR(CLR_EMPTY));
 	//attron(A_BOLD);
 	addstr(ss.str().c_str());
