@@ -26,7 +26,8 @@ struct Player {
 	int32_t maximum_traits[TRAIT_COUNT];
 
 	std::vector<BaseItem *> inventory;
-	std::string to_string();
+	std::string to_string_1();
+	std::string to_string_2();
 	std::string name;
 
 	void AddToInventory(BaseItem *);

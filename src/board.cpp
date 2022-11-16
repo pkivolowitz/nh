@@ -463,18 +463,13 @@ void Board::Display(Player & p, bool show_original, double tr) {
 
 	UpdateTime();
 	move(BOARD_STATUS_OFFSET, 0);
-	stringstream ss;
-	ss << "Seed: " << setw(4) << left << seed;
-	ss << "Board: " << setw(3) << left << current_board;
-	ss << "PPOS: " << setw(8) << p.pos.to_string();
-	ss << "Turn: " << setw(5) << turn_counter;
 	attron(COLOR_PAIR(CLR_EMPTY));
-	addstr(ss.str().c_str());
+	addstr(p.to_string_2().c_str());
 	attroff(COLOR_PAIR(CLR_EMPTY));
 
 	move(BOARD_STATUS_OFFSET + 1, 0);
 	attron(COLOR_PAIR(CLR_EMPTY));
-	addstr(p.to_string().c_str());
+	addstr(p.to_string_1().c_str());
 	attroff(COLOR_PAIR(CLR_EMPTY));
 }
 

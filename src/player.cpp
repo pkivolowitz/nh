@@ -1,6 +1,7 @@
 #include <ncurses.h>
 #include <cassert>
 #include <sstream>
+#include <iomanip>
 #include "utilities.hpp"
 #include "player.hpp"
 #include "colors.hpp"
@@ -58,10 +59,21 @@ int32_t Player::TotalInventoryCount() {
 	return total_items;
 }
 
-string Player::to_string() {
+string Player::to_string_2() {
 	stringstream ss;
 	ss << name << " ";
-	ss << "CNC: " << current_traits[CONCENTRATION];
-	ss << "/" << maximum_traits[CONCENTRATION];
+	ss << "HLTH: " << current_traits[HEALTH] << "/" << maximum_traits[HEALTH] << " ";
+	ss << "CNC: " << current_traits[CONCENTRATION] << "/" << maximum_traits[CONCENTRATION] << " ";
+	ss << "LVL: " << current_traits[LEVEL] << "/" << maximum_traits[LEVEL] << " ";
+	ss << "EXP: " << current_traits[EXPERIENCE] << "/" << maximum_traits[EXPERIENCE] << " ";
+	return ss.str();
+}
+
+string Player::to_string_1() {
+	stringstream ss;
+	ss << right << setw(name.size() + 6) << "INT: " << current_traits[INTELLIGENCE] << "/" << maximum_traits[INTELLIGENCE] << " ";
+	ss << "CON: " << current_traits[CONSTITUTION] << "/" << maximum_traits[CONSTITUTION] << " ";
+	ss << "INV: " << InventoryCount() << "/" << TotalInventoryCount() << "/";
+	ss << WeightOfInventory();
 	return ss.str();
 }
