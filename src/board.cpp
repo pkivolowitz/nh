@@ -208,14 +208,14 @@ void Board::LayCorridor(Coordinate & src, Coordinate & dst) {
 			if (c < 0 or c >= BOARD_COLUMNS)
 				break;
 			MakeCorridor(cells[r][c]);
-			if (RR(1,100) < 5)
+			if (RR(1,100) < 3)
 				seeds.push_back(Coordinate(r,c));
 		}
 	}
 	for (Coordinate & c : seeds) {
 		if (BuildCornerKey(c) == "         ") {
 			int32_t delta_r = (RR() & 1) ? 1 : -1;
-			int32_t nspaces = RR(2, 5);
+			int32_t nspaces = RR(1, 3);
 			while (nspaces-- > 0) {
 				c.r += delta_r;
 				if (c.r < 0 or c.r >= BOARD_ROWS)
@@ -357,7 +357,6 @@ void Board::Create() {
 	if (!no_corridors) {
 		PlaceCorridors();
 	}
-	//RemoveFloorDigits();
 	FlattenRooms();
 	PlaceStairs();
 	//DebugPrintBoard(0);
@@ -426,7 +425,7 @@ void Board::Display(Player & p, bool show_original, double tr) {
 				own set of problems so is left out.
 			*/
 			if (IsCorridor(p.pos) and cell.base_type == WALL and
-				!cell.is_known and !IsNeighbor(p.pos, coord)
+				!cell.is_known /*and !IsNeighbor(p.pos, coord)*/
 			) {
 				continue;
 			}
