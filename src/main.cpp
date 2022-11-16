@@ -18,6 +18,7 @@
 #include "board.hpp"
 #include "player.hpp"
 #include "colors.hpp"
+#include "cmd_line_options.hpp"
 
 using namespace std;
 
@@ -57,42 +58,6 @@ bool StartLog() {
 		cerr << "Could not open log file " << log_file_name << ".\n";
 	}
 	return my_log.is_open();
-}
-
-bool HandleOptions(int argc, char **argv) {
-	int c;
-	bool retval = true;
-	while ((c = getopt(argc, argv, "cs:hl")) != -1) {
-		switch (c) {
-		case 'h':
-			cout << "Usage:\n";
-			cout << "-c no corridors\n";
-			//cout << "-f shows the floor\n";
-			cout << "-h prints this help\n";
-			cout << "-l enables logging\n";
-			cout << "-s specifies random seed (omit for time of day)\n";
-			retval = false;
-			break;
-
-		case 'c':
-			no_corridors = true;
-			break;
-
-		//case 'f':
-		//	show_floor = true;
-		//	break;
-
-		case 's':
-			srand((seed = atoi(optarg)));
-			break;
-
-		case 'l':
-			if (!StartLog())
-				return 1;
-			break;
-		}
-	}
-	return retval;
 }
 
 bool IsMovementChar(int32_t c) {
@@ -210,7 +175,7 @@ int main(int argc, char * argv[]) {
 	string digit_accumulator;
 	int32_t numeric_qualifier = 0;		// 0 means none.
 
-	if (!HandleOptions(argc, argv))
+	if (!HandleOptions(argc, argv, player.name))
 		return 0;
 
 	InitCurses();

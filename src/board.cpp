@@ -25,7 +25,7 @@ Board::Board() {
 
 void Board::UpdateTime() {
 	string current_time = gt.GetCurrentTime();
-	mvaddstr(0, COLS - 8, current_time.c_str());
+	mvaddstr(0, BOARD_COLUMNS - 8, current_time.c_str());
 	refresh();
 }
 
@@ -469,9 +469,12 @@ void Board::Display(Player & p, bool show_original, double tr) {
 	ss << "PPOS: " << setw(8) << p.pos.to_string();
 	ss << "Turn: " << setw(5) << turn_counter;
 	attron(COLOR_PAIR(CLR_EMPTY));
-	//attron(A_BOLD);
 	addstr(ss.str().c_str());
-	//attroff(A_BOLD);
+	attroff(COLOR_PAIR(CLR_EMPTY));
+
+	move(BOARD_STATUS_OFFSET + 1, 0);
+	attron(COLOR_PAIR(CLR_EMPTY));
+	addstr(p.to_string().c_str());
 	attroff(COLOR_PAIR(CLR_EMPTY));
 }
 
