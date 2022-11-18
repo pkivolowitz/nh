@@ -7,6 +7,7 @@
 #include "room.hpp"
 #include "player.hpp"
 #include "game_time.hpp"
+#include "items.hpp"
 
 using ivec = std::vector<int32_t>;
 
@@ -15,17 +16,23 @@ struct Board {
 
 	Cell cells[BOARD_ROWS][BOARD_COLUMNS];
 	void Display(Player & p, bool show_original, double tr = 2.5);
+	void ClearInfoLine();
+	void ReportGoodies(Coordinate & c);
+	int32_t GetGoodieCount(Coordinate & c);
 	bool IsDownstairs(Coordinate & c);
 	bool IsUpstairs(Coordinate & c);
 	bool IsAStairway(Coordinate &);
 	bool IsNavigable(Coordinate &);
 	void UpdateTime();
 	
+	void AddGoodie(Coordinate, BaseItem);
 	Coordinate upstairs;
 	Coordinate downstairs;
 
 	void DebugPrintBoard(int32_t mode);
+	int32_t GetSymbol(Coordinate);
 
+	GoodieMap goodies;
 	RoomVec rooms;
 
 	static const int32_t MIN_ROOMS = 6;
@@ -52,6 +59,8 @@ private:
 	void LayCorridor(Coordinate &, Coordinate &);
 	void Show(bool show_original, Coordinate & coord, const Cell & cell);
 	bool LineOfSight(Coordinate & player, Coordinate & cell);
+	void PlaceGoodies();
+	void PrintGoodies();
 	
 	inline bool IsCorridor(Coordinate c) {
 		return IsCorridor(c.r, c.c);

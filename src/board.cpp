@@ -23,6 +23,8 @@ Board::Board() {
 	Create();
 }
 
+extern bool operator<(const Coordinate &l, const Coordinate &r);
+
 void Board::UpdateTime() {
 	string current_time = gt.GetCurrentTime();
 	mvaddstr(0, BOARD_COLUMNS - 8, current_time.c_str());
@@ -344,6 +346,34 @@ void Board::Enclose(int32_t rn) {
 	}
 }
 
+void Board::AddGoodie(Coordinate c, BaseItem bi) {
+	auto it = goodies.find(c);
+	if (it == goodies.end()) {
+		vector<BaseItem> v;
+		goodies.insert({c, v});
+	}
+	it = goodies.find(c);
+	it->second.push_back(bi);
+}
+
+/* This is the debug version of this function.
+*/
+void Board::PlaceGoodies() {
+	for (auto & r : rooms) {
+		Spellbook sb;
+		AddGoodie(r.GetCentroid(), sb);
+	}
+}
+
+void Board::PrintGoodies() {
+	if (!my_log.is_open())
+		return;
+
+	for (auto & it : goodies) {
+		my_log << it.first.r << " " << it.first.c << " ";
+		my_log << it.second.size() << endl;
+	}
+}
 void Board::Create() {
 	extern bool no_corridors;
 	int32_t room_count = RR(MIN_ROOMS, MAX_ROOMS);
@@ -359,6 +389,8 @@ void Board::Create() {
 	}
 	FlattenRooms();
 	PlaceStairs();
+	PlaceGoodies();
+	PrintGoodies();
 	//DebugPrintBoard(0);
 	//DebugPrintBoard(1);
 	//DebugPrintBoard(2);
@@ -381,8 +413,10 @@ void SetAttributes(bool on, int32_t c) {
 	
 	if (c == ACS_BULLET)
 		a = A_DIM;
+	else if (c == '+')
+		a = COLOR_PAIR(CLR_SPELLBOOKS);
 	else if (c == '#')
-		a = A_DIM;
+			a = A_DIM;
 	else if (c == '<')
 		a = A_BOLD;
 	else if (c == '>')
@@ -391,13 +425,61 @@ void SetAttributes(bool on, int32_t c) {
 	(*func)(stdscr, a, nullptr);
 }
 
+int32_t Board::GetGoodieCount(Coordinate & c) {
+	int32_t retval = 0;
+	auto it = goodies.find(c);
+	if (it != goodies.end()) {
+		vector<BaseItem> &v = it->second;
+		retval = v.size();
+	}
+	return retval;
+}
+
+int32_t Board::GetSymbol(Coordinate c) {
+	int32_t retval = -1;
+	auto it = goodies.find(c);
+	if (it != goodies.end()) {
+		vector<BaseItem> & v = it->second;
+		if (!v.empty()) {
+			retval = v.back().symbol;
+		}
+	}
+	return retval; 
+}
+
+void Board::ClearInfoLine() {
+	move(0, 0);
+	clrtoeol();
+	UpdateTime();
+}
+
+void Board::ReportGoodies(Coordinate & c) {
+	if (GetSymbol(c) > 0) {
+		stringstream ss;
+		int32_t goodie_count = GetGoodieCount(c);
+		assert(goodie_count > 0);
+		ss << (goodie_count > 1 ? "There are " : "There is ");
+		ss << goodie_count << " ";
+		ss << (goodie_count > 1 ? "items here." : "item here.");
+		move(0, 0);
+		addstr(ss.str().c_str());
+		if (my_log.is_open() && false)
+			my_log << "Attempted to call out goodies at " << c.to_string() << endl;
+	} else {
+		assert(false);
+	}
+}
 void Board::Show(bool show_original, Coordinate & coord, const Cell & cell) {
 	if (show_original)
 		mvaddch(BOARD_TOP_OFFSET + coord.r, coord.c, cell.original_c);
 	else {
-		SetAttributes(true, cell.display_c);
-		mvaddch(BOARD_TOP_OFFSET + coord.r, coord.c, cell.display_c);
-		SetAttributes(false, cell.display_c);
+		int32_t symbol = GetSymbol(coord);
+		if (symbol < 0)
+			symbol = cell.display_c;
+
+		SetAttributes(true, symbol);
+		mvaddch(BOARD_TOP_OFFSET + coord.r, coord.c, symbol);
+		SetAttributes(false, symbol);
 	}
 }
 
@@ -442,6 +524,17 @@ void Board::Display(Player & p, bool show_original, double tr) {
 				continue;
 			}
 
+			// If a floor is known and is covered by something, show
+			// the something.
+			if (
+				cell.base_type == ROOM and
+				cell.is_known and
+				GetSymbol(coord) >= 0
+			) {
+				Show(show_original, coord, cell);
+				continue;
+			}
+
 			// Don't show remaining cells that are beyond our torch.
 			if (!(coord.Distance(p.pos) < tr)) {
 				continue;
@@ -479,7 +572,7 @@ bool Board::LineOfSight(Coordinate &p, Coordinate & other) {
 	if (distance <= 1)
 		return true;
 
-	if (my_log.is_open()) {
+	if (my_log.is_open() and false) {
 		my_log << "LOS p: " << p.to_string();
 		my_log << " other: " << other.to_string();
 		my_log << " dist: " << distance;

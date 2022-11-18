@@ -82,9 +82,11 @@ void HandleMovement(Board * b, Player & p, int32_t c, int32_t numeric_qualifier)
 		// The while loop below will loop for a while and will be broken
 		// when the player hits something that blocks them.
 	}
+
 	if (numeric_qualifier == 0) {
 		numeric_qualifier = 1;
 	}
+
 	bool first_step = true;
 	while (numeric_qualifier-- > 0) {
 		switch (tolower(c)) {
@@ -155,9 +157,17 @@ void HandleMovement(Board * b, Player & p, int32_t c, int32_t numeric_qualifier)
 		b->Display(p, show_original);
 		p.Display();
 		refresh();
+
+		// Stop running if the current position is a stairway.
 		if (b->IsAStairway(p.pos)) {
 			break;
 		}
+
+		// Stop running if the current position holds a goodie.
+		if (b->GetSymbol(ppos) >= 0) {
+			break;
+		}
+
 		if (numeric_qualifier > 0) {
 			usleep(20000);
 		}
@@ -241,6 +251,9 @@ down:		if (current_board == boards.size() - 1) {
 		}
 		board->Display(player, show_original);
 		player.Display();
+		if (board->GetSymbol(player.pos) >= 0) {
+			board->ReportGoodies(player.pos);
+		}
 		refresh();
 		// Do not carry over any numeric qualifiers.
 		numeric_qualifier = 0;

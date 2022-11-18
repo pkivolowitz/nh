@@ -10,3 +10,7 @@ string Coordinate::to_string() {
 	ss << "(" << r << "," << c << ")";
 	return ss.str();
 }
+
+bool operator<(const Coordinate &l, const Coordinate &r) {
+	return (l.r < r.r || (l.r == r.r && l.c < r.c));
+}
