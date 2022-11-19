@@ -347,6 +347,14 @@ void Board::Enclose(int32_t rn) {
 }
 
 void Board::AddGoodie(Coordinate c, BaseItem bi) {
+	// Dropping a goodie on a stairway is not
+	// supported yet.
+	if (IsAStairway(c)) {
+		if (my_log.is_open()) {
+			my_log << "Avoiding adding a goodie on a stairway.\n";
+		}
+		return;
+	}
 	auto it = goodies.find(c);
 	if (it == goodies.end()) {
 		vector<BaseItem> v;
