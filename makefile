@@ -1,12 +1,12 @@
 SYS := $(shell g++ -dumpmachine)
 ifneq (, $(findstring apple, $(SYS)))
-CFLAGS	= -Wall -Iinclude -std=c++17 -g
+CFLAGS	= -Wall -Iinclude -std=c++17 -g -I/usr/local/opt/ncurses/include
 else
-CFLAGS	= -Wall -Iinclude -std=c++17 -g
+CFLAGS	= -Wall -Iinclude -std=c++17 -g -I/usr/local/opt/ncurses/include
 endif
 
 CC	    = g++
-LFLAGS	= -lcurses
+LFLAGS=-L/opt/homebrew/opt/ncurses/lib -lmenu -lncurses
 
 srcs = $(wildcard src/*.cpp)
 objs = $(srcs:.cpp=.o)
