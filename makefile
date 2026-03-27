@@ -1,9 +1,7 @@
+# Copyright (c) 2026 Perry Kivolowitz. All rights reserved.
+
 SYS := $(shell g++ -dumpmachine)
-ifneq (, $(findstring apple, $(SYS)))
-CFLAGS	= -Wall -Iinclude -std=c++17 -g -I/usr/local/opt/ncurses/include
-else
-CFLAGS	= -Wall -Iinclude -std=c++17 -g -I/usr/local/opt/ncurses/include
-endif
+CFLAGS = -Wall -Werror -Iinclude -std=c++20 -g -I/opt/homebrew/opt/ncurses/include -I/opt/homebrew/include
 
 CC	    = g++
 LFLAGS=-L/opt/homebrew/opt/ncurses/lib -lmenu -lncurses

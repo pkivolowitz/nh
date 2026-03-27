@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Perry Kivolowitz. All rights reserved.
+
 #include "mymenus.hpp"
 
 using namespace std;
@@ -16,8 +18,8 @@ MyMenu::~MyMenu() {
 
 bool MyMenu::Initialize(ItemVector & items) {
     bool retval = false;
-    int max_width = MaxItemWidth(items);
-        free_menu(m);
+    (void)MaxItemWidth(items);
+    free_menu(m);
     return retval;
 }
 

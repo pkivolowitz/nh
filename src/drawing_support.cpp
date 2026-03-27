@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Perry Kivolowitz. All rights reserved.
+
 #include "drawing_support.hpp"
 
 CornerMap corner_map;

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Perry Kivolowitz. All rights reserved.
+
 #include "game_time.hpp"
 
 using namespace std;

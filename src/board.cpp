@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Perry Kivolowitz. All rights reserved.
+
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -27,13 +29,24 @@ extern bool operator<(const Coordinate &l, const Coordinate &r);
 
 void Board::UpdateTime() {
 	string current_time = gt.GetCurrentTime();
-	mvaddstr(0, BOARD_COLUMNS - 8, current_time.c_str());
-	refresh();
+	mvwaddstr(win, 0, BOARD_COLUMNS - 8, current_time.c_str());
+	// Caller is responsible for wrefresh.
 }
 
 bool Board::IsNavigable(Coordinate & c) {
-	return cells[c.r][c.c].base_type == ROOM or
-		cells[c.r][c.c].base_type == CORRIDOR;
+	CellBaseType bt = cells[c.r][c.c].base_type;
+	if (bt == ROOM || bt == CORRIDOR) return true;
+	if (bt == DOOR) return IsDoorPassable(c);
+	return false;
+}
+
+bool Board::IsDoor(Coordinate & c) {
+	return cells[c.r][c.c].base_type == DOOR;
+}
+
+bool Board::IsDoorPassable(Coordinate & c) {
+	DoorState ds = cells[c.r][c.c].door_state;
+	return ds == DOOR_MISSING || ds == DOOR_OPEN;
 }
 
 /*	Clear() - This function zeros out the Board data structure making
@@ -72,15 +85,6 @@ void Board::FindRowsToAvoid(ivec &r_avoid) {
 	}
 }
 
-/*	FindRowsToAvoid
-	FindColsToAvoid
-
-	Called prior to laying out corridors, this function builds an ivec
-	which contains the columns and rows for which corridors should be
-	avoided. The reason is to avoid having a corridor run along the
-	edge of a room. While this would make some sense as being an open
-	cavern, the appearence is ugly.
-*/
 void Board::FindColsToAvoid(ivec &c_avoid) {
 	for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
 		for (int32_t r = 0; r < BOARD_ROWS; r++) {
@@ -176,7 +180,6 @@ void Board::PlaceCorridors() {
 	}
 
 	assert(key_points.size() > 0);
-	// shuffle(key_points.begin(), key_points.end(), std::default_random_engine(rand()));
 	for (uint32_t index = 0; index < key_points.size() - 1; index++) {
 		Coordinate &src = key_points[index];
 		Coordinate &dst = key_points[index + 1];
@@ -195,9 +198,15 @@ void Board::MakeCorridor(Coordinate & c) {
 void Board::MakeCorridor(Cell & c) {
 	if (isdigit(c.original_c))
 		return;
+	// If this cell was a wall, mark it as a door candidate.
+	// PlaceDoors() will filter by adjacency and randomize states.
+	bool was_wall = (c.base_type == WALL);
 	c.display_c = c.original_c = '#';
 	c.base_type = CORRIDOR;
 	c.final_room_number = -1;
+	if (was_wall) {
+		c.door_state = DOOR_CLOSED;		// Placeholder for PlaceDoors.
+	}
 }
 
 void Board::LayCorridor(Coordinate & src, Coordinate & dst) {
@@ -346,30 +355,37 @@ void Board::Enclose(int32_t rn) {
 	}
 }
 
-void Board::AddGoodie(Coordinate c, BaseItem bi) {
-	// Dropping a goodie on a stairway is not
-	// supported yet.
-	if (IsAStairway(c)) {
-		if (my_log.is_open()) {
-			my_log << "Avoiding adding a goodie on a stairway.\n";
-		}
-		return;
-	}
+void Board::AddGoodie(Coordinate c, unique_ptr<BaseItem> item) {
 	auto it = goodies.find(c);
 	if (it == goodies.end()) {
-		vector<BaseItem> v;
-		goodies.insert({c, v});
+		vector<unique_ptr<BaseItem>> v;
+		goodies.insert({c, std::move(v)});
+		it = goodies.find(c);
 	}
-	it = goodies.find(c);
-	it->second.push_back(bi);
+	it->second.push_back(std::move(item));
 }
 
-/* This is the debug version of this function.
-*/
+vector<unique_ptr<BaseItem>> Board::RemoveGoodies(Coordinate c) {
+	vector<unique_ptr<BaseItem>> retval;
+	auto it = goodies.find(c);
+	if (it != goodies.end()) {
+		retval = std::move(it->second);
+		goodies.erase(it);
+	}
+	return retval;
+}
+
 void Board::PlaceGoodies() {
 	for (auto & r : rooms) {
-		Spellbook sb;
-		AddGoodie(r.GetCentroid(), sb);
+		Coordinate c = r.GetCentroid();
+		// Don't auto-place items on stairways during generation.
+		if (IsAStairway(c)) {
+			if (my_log.is_open()) {
+				my_log << "Avoiding adding a goodie on a stairway.\n";
+			}
+			continue;
+		}
+		AddGoodie(c, make_unique<Spellbook>());
 	}
 }
 
@@ -382,6 +398,7 @@ void Board::PrintGoodies() {
 		my_log << it.second.size() << endl;
 	}
 }
+
 void Board::Create() {
 	extern bool no_corridors;
 	int32_t room_count = RR(MIN_ROOMS, MAX_ROOMS);
@@ -394,14 +411,147 @@ void Board::Create() {
 	PlaceCorners();
 	if (!no_corridors) {
 		PlaceCorridors();
+		PlaceDoors();
 	}
 	FlattenRooms();
 	PlaceStairs();
 	PlaceGoodies();
 	PrintGoodies();
-	//DebugPrintBoard(0);
-	//DebugPrintBoard(1);
-	//DebugPrintBoard(2);
+}
+
+void Board::UpdateDoorDisplay(int32_t r, int32_t c) {
+	Cell & cell = cells[r][c];
+	switch (cell.door_state) {
+		case DOOR_MISSING:
+			// Archway — render as corridor floor.
+			cell.display_c = '#';
+			break;
+		case DOOR_OPEN:
+			// Open door contrasts with the wall it sits in.
+			// Vertical wall (|) → open door is '-'.
+			// Horizontal wall (—) → open door is '|'.
+			cell.display_c = cell.door_horizontal ? '|' : '-';
+			break;
+		case DOOR_CLOSED:
+		case DOOR_LOCKED:
+		case DOOR_STUCK:
+			cell.display_c = DOOR_CLOSED_SYM;
+			break;
+		default:
+			break;
+	}
+	cell.original_c = cell.display_c;
+}
+
+/*	PlaceDoors() — scan for corridor cells that were converted from
+	walls (marked with door_state != DOOR_NONE by MakeCorridor). A
+	valid door position must have a ROOM neighbor on one orthogonal
+	axis and a non-ROOM neighbor on the other side of that axis, so
+	it sits at the boundary between corridor and room.
+
+	Door state probabilities:
+		20% missing (archway, no physical door)
+		30% open
+		25% closed
+		15% stuck (closed and stuck)
+		10% locked
+*/
+void Board::PlaceDoors() {
+	for (int32_t r = 0; r < BOARD_ROWS; r++) {
+		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
+			// Only process cells MakeCorridor flagged as wall-to-corridor.
+			if (cells[r][c].door_state == DOOR_NONE) continue;
+			if (cells[r][c].base_type != CORRIDOR) continue;
+
+			// Check vertical axis: room above/below with non-room on
+			// the opposite side means this is a door on a horizontal wall.
+			bool room_above = (r > 0 && cells[r-1][c].base_type == ROOM);
+			bool room_below = (r < BOARD_ROWS-1 && cells[r+1][c].base_type == ROOM);
+			bool room_left  = (c > 0 && cells[r][c-1].base_type == ROOM);
+			bool room_right = (c < BOARD_COLUMNS-1 && cells[r][c+1].base_type == ROOM);
+
+			bool vert_door = (room_above && !room_below) ||
+							 (room_below && !room_above);
+			bool horiz_door = (room_left && !room_right) ||
+							  (room_right && !room_left);
+
+			if (!vert_door && !horiz_door) {
+				// Not a boundary position — clear the placeholder.
+				cells[r][c].door_state = DOOR_NONE;
+				continue;
+			}
+
+			cells[r][c].base_type = DOOR;
+			// door_horizontal = true when door is on a horizontal wall
+			// (room above or below, you walk vertically through it).
+			cells[r][c].door_horizontal = vert_door;
+
+			// Randomize door state.
+			int32_t roll = RR(1, 100);
+			if (roll <= 20) {
+				cells[r][c].door_state = DOOR_MISSING;
+			} else if (roll <= 50) {
+				cells[r][c].door_state = DOOR_OPEN;
+			} else if (roll <= 75) {
+				cells[r][c].door_state = DOOR_CLOSED;
+			} else if (roll <= 90) {
+				cells[r][c].door_state = DOOR_STUCK;
+			} else {
+				cells[r][c].door_state = DOOR_LOCKED;
+			}
+
+			UpdateDoorDisplay(r, c);
+		}
+	}
+}
+
+string Board::TryOpenDoor(Coordinate & c) {
+	if (c.r < 0 || c.r >= BOARD_ROWS || c.c < 0 || c.c >= BOARD_COLUMNS)
+		return "There is nothing there to open.";
+
+	Cell & cell = cells[c.r][c.c];
+	if (cell.base_type != DOOR)
+		return "There is nothing there to open.";
+
+	switch (cell.door_state) {
+		case DOOR_OPEN:
+		case DOOR_MISSING:
+			return "This door is already open.";
+		case DOOR_LOCKED:
+			return "This door is locked.";
+		case DOOR_STUCK:
+			return "The door is stuck!";
+		case DOOR_CLOSED:
+			cell.door_state = DOOR_OPEN;
+			UpdateDoorDisplay(c.r, c.c);
+			return "You open the door.";
+		default:
+			return "";
+	}
+}
+
+string Board::TryCloseDoor(Coordinate & c) {
+	if (c.r < 0 || c.r >= BOARD_ROWS || c.c < 0 || c.c >= BOARD_COLUMNS)
+		return "There is nothing there to close.";
+
+	Cell & cell = cells[c.r][c.c];
+	if (cell.base_type != DOOR)
+		return "There is nothing there to close.";
+
+	switch (cell.door_state) {
+		case DOOR_CLOSED:
+		case DOOR_LOCKED:
+		case DOOR_STUCK:
+			return "This door is already closed.";
+		case DOOR_MISSING:
+			return "There is no door there to close.";
+		case DOOR_OPEN:
+			cell.door_state = DOOR_CLOSED;
+			UpdateDoorDisplay(c.r, c.c);
+			return "You close the door.";
+		default:
+			return "";
+	}
 }
 
 /*	MakeKinks - this function will look for long runs of horizontal
@@ -412,33 +562,37 @@ void Board::Create() {
 void Board::MakeKinks() {
 }
 
-void SetAttributes(bool on, int32_t c) {
+// Apply display attributes appropriate for the given cell symbol.
+// The cell_type disambiguates symbols that serve double duty ('+' is
+// both spellbook on the floor and a closed door on a wall).
+void SetAttributes(WINDOW * win, bool on, int32_t c, CellBaseType cell_type) {
 	int (*func)(WINDOW *, attr_t, void *) = on ? wattr_on : wattr_off;
 	attr_t a = A_NORMAL;
 
 	// A_BOLD is non-operative on line drawing characters.
 	// A_DIM is non-operative on MacOS terminal.
-	
-	if (c == ACS_BULLET)
-		a = A_DIM;
-	else if (c == '+')
-		a = COLOR_PAIR(CLR_SPELLBOOKS);
-	else if (c == '#')
-			a = A_DIM;
-	else if (c == '<')
-		a = A_BOLD;
-	else if (c == '>')
-		a = A_BOLD;
 
-	(*func)(stdscr, a, nullptr);
+	if (cell_type == DOOR) {
+		// Doors are plain white — no special color.
+		a = A_NORMAL;
+	} else if (c == ACS_BULLET) {
+		a = A_DIM;
+	} else if (c == '+') {
+		a = COLOR_PAIR(CLR_SPELLBOOKS);
+	} else if (c == '#') {
+		a = A_DIM;
+	} else if (c == '<' || c == '>') {
+		a = A_BOLD;
+	}
+
+	(*func)(win, a, nullptr);
 }
 
 int32_t Board::GetGoodieCount(Coordinate & c) {
 	int32_t retval = 0;
 	auto it = goodies.find(c);
 	if (it != goodies.end()) {
-		vector<BaseItem> &v = it->second;
-		retval = v.size();
+		retval = (int32_t)it->second.size();
 	}
 	return retval;
 }
@@ -447,17 +601,17 @@ int32_t Board::GetSymbol(Coordinate c) {
 	int32_t retval = -1;
 	auto it = goodies.find(c);
 	if (it != goodies.end()) {
-		vector<BaseItem> & v = it->second;
+		auto & v = it->second;
 		if (!v.empty()) {
-			retval = v.back().symbol;
+			retval = v.back()->symbol;
 		}
 	}
-	return retval; 
+	return retval;
 }
 
 void Board::ClearInfoLine() {
-	move(0, 0);
-	clrtoeol();
+	wmove(win, 0, 0);
+	wclrtoeol(win);
 	UpdateTime();
 }
 
@@ -469,32 +623,38 @@ void Board::ReportGoodies(Coordinate & c) {
 		ss << (goodie_count > 1 ? "There are " : "There is ");
 		ss << goodie_count << " ";
 		ss << (goodie_count > 1 ? "items here." : "item here.");
-		move(0, 0);
-		addstr(ss.str().c_str());
+		wmove(win, 0, 0);
+		waddstr(win, ss.str().c_str());
 		if (my_log.is_open() && false)
 			my_log << "Attempted to call out goodies at " << c.to_string() << endl;
-	} else {
-		assert(false);
 	}
 }
+
 void Board::Show(bool show_original, Coordinate & coord, const Cell & cell) {
 	if (show_original)
-		mvaddch(BOARD_TOP_OFFSET + coord.r, coord.c, cell.original_c);
+		mvwaddch(win, BOARD_TOP_OFFSET + coord.r, coord.c, cell.original_c);
 	else {
 		int32_t symbol = GetSymbol(coord);
-		if (symbol < 0)
+		// If there's an item on the floor, use its symbol. Otherwise
+		// use the cell's display character. Pass the cell type so
+		// SetAttributes can distinguish doors from floor items.
+		CellBaseType render_type = cell.base_type;
+		if (symbol >= 0) {
+			render_type = ROOM;		// Item on floor — treat as room.
+		} else {
 			symbol = cell.display_c;
+		}
 
-		SetAttributes(true, symbol);
-		mvaddch(BOARD_TOP_OFFSET + coord.r, coord.c, symbol);
-		SetAttributes(false, symbol);
+		SetAttributes(win, true, symbol, render_type);
+		mvwaddch(win, BOARD_TOP_OFFSET + coord.r, coord.c, symbol);
+		SetAttributes(win, false, symbol, render_type);
 	}
 }
 
 void Board::Display(Player & p, bool show_original, double tr) {
 	extern uint32_t current_board;
-	
-	erase();
+
+	werase(win);
 
 	for (int32_t r = 0; r < BOARD_ROWS; r++) {
 		for (int32_t c = 0; c < BOARD_COLUMNS; c++) {
@@ -504,7 +664,7 @@ void Board::Display(Player & p, bool show_original, double tr) {
 			// Don't show "nothing"
 			if (cell.base_type == EMPTY)
 				continue;
-			
+
 			if (show_original) {
 				Show(show_original, coord, cell);
 				continue;
@@ -520,12 +680,13 @@ void Board::Display(Player & p, bool show_original, double tr) {
 				continue;
 			}
 
-			// Always show walls, corridors and stairs if they are known.
+			// Always show walls, corridors, doors and stairs if known.
 			if (
-				(cell.base_type == WALL or 
+				(cell.base_type == WALL or
 				 cell.base_type == CORRIDOR or
+				 cell.base_type == DOOR or
 				 IsAStairway(coord)
-				) and 
+				) and
 				cell.is_known
 			) {
 				Show(show_original, coord, cell);
@@ -563,15 +724,16 @@ void Board::Display(Player & p, bool show_original, double tr) {
 		my_log << endl;
 
 	UpdateTime();
-	move(BOARD_STATUS_OFFSET, 0);
-	attron(COLOR_PAIR(CLR_EMPTY));
-	addstr(p.to_string_2().c_str());
-	attroff(COLOR_PAIR(CLR_EMPTY));
+	wmove(win, BOARD_STATUS_OFFSET, 0);
+	wattron(win, COLOR_PAIR(CLR_EMPTY));
+	waddstr(win, p.to_string_2().c_str());
+	wattroff(win, COLOR_PAIR(CLR_EMPTY));
 
-	move(BOARD_STATUS_OFFSET + 1, 0);
-	attron(COLOR_PAIR(CLR_EMPTY));
-	addstr(p.to_string_1().c_str());
-	attroff(COLOR_PAIR(CLR_EMPTY));
+	wmove(win, BOARD_STATUS_OFFSET + 1, 0);
+	wattron(win, COLOR_PAIR(CLR_EMPTY));
+	waddstr(win, p.to_string_1().c_str());
+	wattroff(win, COLOR_PAIR(CLR_EMPTY));
+	// Caller is responsible for wrefresh.
 }
 
 bool Board::LineOfSight(Coordinate &p, Coordinate & other) {
@@ -591,9 +753,15 @@ bool Board::LineOfSight(Coordinate &p, Coordinate & other) {
 		if (my_log.is_open()) {
 			my_log << " lerp: " << s.to_string();
 		}
+		Cell & los_cell = cells[s.r][s.c];
+		// Closed doors block line of sight just like walls.
+		bool door_blocks = (los_cell.base_type == DOOR &&
+			los_cell.door_state != DOOR_OPEN &&
+			los_cell.door_state != DOOR_MISSING);
 		if (
-			cells[s.r][s.c].base_type == EMPTY or
-			cells[s.r][s.c].base_type == WALL
+			los_cell.base_type == EMPTY or
+			los_cell.base_type == WALL or
+			door_blocks
 		) {
 			if (my_log.is_open()) {
 				my_log << " returning false\n";
@@ -616,10 +784,10 @@ void Board::PlaceStairs() {
 	}
 	shuffle(room_numbers.begin(), room_numbers.end(), default_random_engine(rand()));
 	upstairs = GetGoodStairLocation(rooms[room_numbers[0]]);
-	cells[upstairs.r][upstairs.c].display_c = 
+	cells[upstairs.r][upstairs.c].display_c =
 		cells[upstairs.r][upstairs.c].original_c = UP_STAIRS;
 	downstairs = GetGoodStairLocation(rooms[room_numbers[1]]);
-	cells[downstairs.r][downstairs.c].display_c = 
+	cells[downstairs.r][downstairs.c].display_c =
 		cells[downstairs.r][downstairs.c].original_c = DOWN_STAIRS;
 	assert(upstairs != downstairs);
 }
@@ -629,7 +797,7 @@ bool Board::IsAStairway(Coordinate & c) {
 	    (c.c < 0 or c.c >= BOARD_COLUMNS))
 		return false;
 	assert(c.c >= 0 and c.c < BOARD_COLUMNS);
-	return (cells[c.r][c.c].original_c == UP_STAIRS) or 
+	return (cells[c.r][c.c].original_c == UP_STAIRS) or
 			(cells[c.r][c.c].original_c == DOWN_STAIRS);
 }
 
@@ -653,17 +821,17 @@ Coordinate Board::GetGoodStairLocation(Room & room) {
 }
 
 bool Board::IsDownstairs(Coordinate & c) {
-	return IsAStairway(c) and 
+	return IsAStairway(c) and
 			cells[c.r][c.c].original_c == DOWN_STAIRS;
 }
 
 bool Board::IsUpstairs(Coordinate & c) {
-	return IsAStairway(c) and 
+	return IsAStairway(c) and
 			cells[c.r][c.c].original_c == UP_STAIRS;
 }
 
 /*	PlanBForCooridors() - this function attempts to find
-	an acceptable corridor in cases where the global 
+	an acceptable corridor in cases where the global
 	algorithm fails for a room. This method rebuilds
 	the bad column and bad row vectors including only the
 	afflicted room and its nearest neighbor.
@@ -675,7 +843,7 @@ bool Board::IsUpstairs(Coordinate & c) {
 bool Board::PlanBForCooridors(uint32_t room_index) {
 	Coordinate src = rooms.at(room_index).GetCentroid();
 	double smallest_distance = DBL_MAX;
-	uint32_t closest_neighbor;
+	uint32_t closest_neighbor = 0;
 
 	for (uint32_t i = 0; i < rooms.size(); i++) {
 		if (i == room_index)
@@ -704,11 +872,11 @@ void Board::FlattenRooms() {
 		work_list.clear();
 
 		Coordinate c = rooms[room_index].GetCentroid();
-		// If the centroid has already been flattened, the whole room 
+		// If the centroid has already been flattened, the whole room
 		// has been flattened.
 		if (cells[c.r][c.c].has_been_flattened)
 			continue;
-		// The region containing this cell will be flattened to the 
+		// The region containing this cell will be flattened to the
 		// value of this cell.
 		int32_t flattened_room_value = rooms[room_index].room_number;
 
@@ -735,7 +903,7 @@ void Board::FlattenRooms() {
 				for (int32_t dc = -1; dc <= 1; dc++) {
 					if (dc == 0 and dr == 0)
 						continue;
-						
+
 					Coordinate e_c = Coordinate(dr + c.r, dc + c.c);
 					assert(e_c.r >= 0 and e_c.r < BOARD_ROWS);
 					assert(e_c.c >= 0 and e_c.c < BOARD_COLUMNS);
@@ -753,15 +921,8 @@ void Board::FlattenRooms() {
 
 					cell.has_been_added_to_work_list = true;
 					work_list.push_back(e_c);
-
-					// if (my_log.is_open()) {
-					// 	my_log << "work list size is: " << work_list.size();
-					// 	my_log << " adding coordinate: " << e_c.to_string() << endl;
-					// }
 				}
 			}
-			// if (my_log.is_open())
-			// 	my_log << "work list size is: " << work_list.size() << endl;
 		}
 	}
 }
@@ -787,6 +948,9 @@ void Board::DebugPrintBoard(int32_t mode) {
 
 				case 2:
 					my_log << cell.is_known;
+					break;
+
+				default:
 					break;
 			}
 		}

@@ -1,7 +1,12 @@
+// Copyright (c) 2026 Perry Kivolowitz. All rights reserved.
+
 #pragma once
 #include <cinttypes>
 #include <vector>
 #include <string>
+#include <memory>
+#include <assert.h>
+#include <ncurses.h>
 #include "utilities.hpp"
 #include "cell.hpp"
 #include "room.hpp"
@@ -14,6 +19,11 @@ using ivec = std::vector<int32_t>;
 struct Board {
 	Board();
 
+	// The ncurses window this board renders into. Set by the
+	// caller after construction — all boards share one window
+	// since only one is displayed at a time.
+	WINDOW * win = nullptr;
+
 	Cell cells[BOARD_ROWS][BOARD_COLUMNS];
 	void Display(Player & p, bool show_original, double tr = 2.5);
 	void ClearInfoLine();
@@ -24,8 +34,20 @@ struct Board {
 	bool IsAStairway(Coordinate &);
 	bool IsNavigable(Coordinate &);
 	void UpdateTime();
-	
-	void AddGoodie(Coordinate, BaseItem);
+
+	// Add item to the floor at the given coordinate.
+	void AddGoodie(Coordinate c, std::unique_ptr<BaseItem> item);
+
+	// Door interaction. Returns a message string for the info line.
+	std::string TryOpenDoor(Coordinate & c);
+	std::string TryCloseDoor(Coordinate & c);
+	bool IsDoor(Coordinate & c);
+	bool IsDoorPassable(Coordinate & c);
+
+	// Remove and return all items at the given coordinate.
+	// Returns an empty vector if nothing is there.
+	std::vector<std::unique_ptr<BaseItem>> RemoveGoodies(Coordinate c);
+
 	Coordinate upstairs;
 	Coordinate downstairs;
 
@@ -53,15 +75,16 @@ private:
 	void PlaceStairs();
 	void MakeKinks();
 	Coordinate GetGoodStairLocation(Room & room);
-	//void RemoveFloorDigits();
 	bool PlanBForCooridors(uint32_t room_index);
 	void FlattenRooms();
 	void LayCorridor(Coordinate &, Coordinate &);
 	void Show(bool show_original, Coordinate & coord, const Cell & cell);
 	bool LineOfSight(Coordinate & player, Coordinate & cell);
+	void PlaceDoors();
+	void UpdateDoorDisplay(int32_t r, int32_t c);
 	void PlaceGoodies();
 	void PrintGoodies();
-	
+
 	inline bool IsCorridor(Coordinate c) {
 		return IsCorridor(c.r, c.c);
 	}
@@ -69,7 +92,7 @@ private:
 	inline bool IsCorridor(int32_t r, int32_t c) {
 		assert(r >= 0 and r < BOARD_ROWS);
 		assert(c >= 0 and c < BOARD_COLUMNS);
-		return cells[r][c].base_type == CORRIDOR;	
+		return cells[r][c].base_type == CORRIDOR;
 	}
 
 	inline bool IsEmpty(Coordinate & c) {

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Perry Kivolowitz. All rights reserved.
+
 #pragma once
 #include <cinttypes>
 #include <map>
