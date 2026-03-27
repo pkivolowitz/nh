@@ -7,6 +7,8 @@
 
 class GameTime {
 public:
+	// Construct a helper object for producing wall-clock timestamps.
 	GameTime();
+	// Return the current local time formatted as HH:MM:SS.
 	std::string GetCurrentTime();
 };

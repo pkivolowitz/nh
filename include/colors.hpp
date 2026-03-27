@@ -12,5 +12,6 @@ enum PNH_COLORS {
 };
 
 struct CursesColorSupport {
+    // Register the color pairs used by the game UI.
     void Initialize();
 };

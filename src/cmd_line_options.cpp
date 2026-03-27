@@ -10,6 +10,7 @@ extern bool no_corridors;
 extern bool StartLog();
 extern int32_t seed;
 
+// Parse command-line flags and apply them to startup state.
 bool HandleOptions(
 	int argc, 
 	char **argv, 
@@ -52,4 +53,3 @@ bool HandleOptions(
 	}
 	return retval;
 }
-

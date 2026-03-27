@@ -20,6 +20,7 @@ extern bool show_floor;
 
 static GameTime gt;
 
+// Build a fresh board by clearing state and generating a level.
 Board::Board() {
 	Clear();
 	Create();
@@ -27,12 +28,14 @@ Board::Board() {
 
 extern bool operator<(const Coordinate &l, const Coordinate &r);
 
+// Draw the current clock into the upper-right corner of the map window.
 void Board::UpdateTime() {
 	string current_time = gt.GetCurrentTime();
 	mvwaddstr(win, 0, BOARD_COLUMNS - 8, current_time.c_str());
 	// Caller is responsible for wrefresh.
 }
 
+// Report whether a coordinate can be stepped on right now.
 bool Board::IsNavigable(Coordinate & c) {
 	CellBaseType bt = cells[c.r][c.c].base_type;
 	if (bt == ROOM || bt == CORRIDOR) return true;
@@ -40,10 +43,12 @@ bool Board::IsNavigable(Coordinate & c) {
 	return false;
 }
 
+// Report whether a coordinate contains a door cell.
 bool Board::IsDoor(Coordinate & c) {
 	return cells[c.r][c.c].base_type == DOOR;
 }
 
+// Report whether the door at a coordinate currently allows movement.
 bool Board::IsDoorPassable(Coordinate & c) {
 	DoorState ds = cells[c.r][c.c].door_state;
 	return ds == DOOR_MISSING || ds == DOOR_OPEN;
@@ -153,6 +158,7 @@ void Board::FindGCoords(ivec &br, ivec &bc, Room &r, Coordinate &coord) {
 	}
 }
 
+// Connect generated rooms in sequence using corridor endpoints inside each room.
 void Board::PlaceCorridors() {
 	ivec needs_plan_b;
 	ivec bc; // bad_columns
@@ -191,10 +197,12 @@ void Board::PlaceCorridors() {
 	}
 }
 
+// Convert the targeted coordinate into corridor floor.
 void Board::MakeCorridor(Coordinate & c) {
 	MakeCorridor(cells[c.r][c.c]);
 }
 
+// Convert a single cell into corridor floor and tag wall breakpoints for door placement.
 void Board::MakeCorridor(Cell & c) {
 	if (isdigit(c.original_c))
 		return;
@@ -209,6 +217,7 @@ void Board::MakeCorridor(Cell & c) {
 	}
 }
 
+// Carve an L-shaped corridor between two selected room points.
 void Board::LayCorridor(Coordinate & src, Coordinate & dst) {
 	vector<Coordinate> seeds;
 
@@ -286,6 +295,7 @@ string Board::BuildCornerKey(int32_t r, int32_t c) {
 	return retval;
 }
 
+// Build the neighborhood key for the given coordinate overload.
 string Board::BuildCornerKey(Coordinate & c) {
 	return BuildCornerKey(c.r, c.c);
 }
@@ -310,6 +320,7 @@ void Board::PlaceCorners() {
 /*	Fill() - an intermediate step in incrementally building the
 	renderable board.
 */
+// Fill every interior tile of a room with its temporary room id.
 void Board::Fill(int32_t rn) {
 	Room & rm = rooms[rn];
 	for (int32_t r = rm.tl.r; r < rm.br.r; r++) {
@@ -324,11 +335,13 @@ void Board::Fill(int32_t rn) {
 	}
 }
 
+// Initialize a cell's type and base display character together.
 inline void SetCell(Cell & cell, CellBaseType bt, int32_t c) {
 	cell.base_type = bt;
 	cell.original_c = c;
 }
 
+// Surround a room's filled interior with wall cells.
 void Board::Enclose(int32_t rn) {
 	Room & rm = rooms[rn];
 	for (int32_t r = rm.tl.r; r < rm.br.r; r++) {
@@ -355,6 +368,7 @@ void Board::Enclose(int32_t rn) {
 	}
 }
 
+// Add a floor item to the stack stored at the given coordinate.
 void Board::AddGoodie(Coordinate c, unique_ptr<BaseItem> item) {
 	auto it = goodies.find(c);
 	if (it == goodies.end()) {
@@ -365,6 +379,7 @@ void Board::AddGoodie(Coordinate c, unique_ptr<BaseItem> item) {
 	it->second.push_back(std::move(item));
 }
 
+// Remove and return every floor item stored at the given coordinate.
 vector<unique_ptr<BaseItem>> Board::RemoveGoodies(Coordinate c) {
 	vector<unique_ptr<BaseItem>> retval;
 	auto it = goodies.find(c);
@@ -375,6 +390,7 @@ vector<unique_ptr<BaseItem>> Board::RemoveGoodies(Coordinate c) {
 	return retval;
 }
 
+// Seed each room with a sample goodie at its centroid when possible.
 void Board::PlaceGoodies() {
 	for (auto & r : rooms) {
 		Coordinate c = r.GetCentroid();
@@ -389,6 +405,7 @@ void Board::PlaceGoodies() {
 	}
 }
 
+// Write floor-item positions to the debug log.
 void Board::PrintGoodies() {
 	if (!my_log.is_open())
 		return;
@@ -399,6 +416,7 @@ void Board::PrintGoodies() {
 	}
 }
 
+// Generate the full contents of a level from scratch.
 void Board::Create() {
 	extern bool no_corridors;
 	int32_t room_count = RR(MIN_ROOMS, MAX_ROOMS);
@@ -419,6 +437,7 @@ void Board::Create() {
 	PrintGoodies();
 }
 
+// Refresh a door cell's rendered glyph after changing its state.
 void Board::UpdateDoorDisplay(int32_t r, int32_t c) {
 	Cell & cell = cells[r][c];
 	switch (cell.door_state) {
@@ -505,6 +524,7 @@ void Board::PlaceDoors() {
 	}
 }
 
+// Attempt to open the door at the requested coordinate.
 string Board::TryOpenDoor(Coordinate & c) {
 	if (c.r < 0 || c.r >= BOARD_ROWS || c.c < 0 || c.c >= BOARD_COLUMNS)
 		return "There is nothing there to open.";
@@ -530,6 +550,7 @@ string Board::TryOpenDoor(Coordinate & c) {
 	}
 }
 
+// Attempt to close the door at the requested coordinate.
 string Board::TryCloseDoor(Coordinate & c) {
 	if (c.r < 0 || c.r >= BOARD_ROWS || c.c < 0 || c.c >= BOARD_COLUMNS)
 		return "There is nothing there to close.";
@@ -565,6 +586,7 @@ void Board::MakeKinks() {
 // Apply display attributes appropriate for the given cell symbol.
 // The cell_type disambiguates symbols that serve double duty ('+' is
 // both spellbook on the floor and a closed door on a wall).
+// Apply curses attributes appropriate for a rendered symbol and cell type.
 void SetAttributes(WINDOW * win, bool on, int32_t c, CellBaseType cell_type) {
 	int (*func)(WINDOW *, attr_t, void *) = on ? wattr_on : wattr_off;
 	attr_t a = A_NORMAL;
@@ -588,6 +610,7 @@ void SetAttributes(WINDOW * win, bool on, int32_t c, CellBaseType cell_type) {
 	(*func)(win, a, nullptr);
 }
 
+// Return how many items are stacked on the given floor coordinate.
 int32_t Board::GetGoodieCount(Coordinate & c) {
 	int32_t retval = 0;
 	auto it = goodies.find(c);
@@ -597,6 +620,7 @@ int32_t Board::GetGoodieCount(Coordinate & c) {
 	return retval;
 }
 
+// Return the visible symbol for the top item at a coordinate, if any.
 int32_t Board::GetSymbol(Coordinate c) {
 	int32_t retval = -1;
 	auto it = goodies.find(c);
@@ -609,12 +633,14 @@ int32_t Board::GetSymbol(Coordinate c) {
 	return retval;
 }
 
+// Erase the message line and redraw the clock.
 void Board::ClearInfoLine() {
 	wmove(win, 0, 0);
 	wclrtoeol(win);
 	UpdateTime();
 }
 
+// Describe the quantity of items on the player's current tile.
 void Board::ReportGoodies(Coordinate & c) {
 	if (GetSymbol(c) > 0) {
 		stringstream ss;
@@ -630,6 +656,7 @@ void Board::ReportGoodies(Coordinate & c) {
 	}
 }
 
+// Render a single board coordinate with the correct visible symbol.
 void Board::Show(bool show_original, Coordinate & coord, const Cell & cell) {
 	if (show_original)
 		mvwaddch(win, BOARD_TOP_OFFSET + coord.r, coord.c, cell.original_c);
@@ -651,6 +678,7 @@ void Board::Show(bool show_original, Coordinate & coord, const Cell & cell) {
 	}
 }
 
+// Render the visible slice of the board plus status lines.
 void Board::Display(Player & p, bool show_original, double tr) {
 	extern uint32_t current_board;
 
@@ -736,6 +764,7 @@ void Board::Display(Player & p, bool show_original, double tr) {
 	// Caller is responsible for wrefresh.
 }
 
+// Trace a coarse ray between two cells to determine visibility.
 bool Board::LineOfSight(Coordinate &p, Coordinate & other) {
 	double distance = p.Distance(other);
 	double delta = 1.0 / (distance + 1.0);
@@ -775,6 +804,7 @@ bool Board::LineOfSight(Coordinate &p, Coordinate & other) {
 	return true;
 }
 
+// Place the up and down staircases in distinct rooms.
 void Board::PlaceStairs() {
 	assert(rooms.size() > 1);
 	ivec room_numbers;
@@ -792,6 +822,7 @@ void Board::PlaceStairs() {
 	assert(upstairs != downstairs);
 }
 
+// Report whether a coordinate contains either staircase glyph.
 bool Board::IsAStairway(Coordinate & c) {
 	if ((c.r < 0 or c.r >= BOARD_ROWS) or
 	    (c.c < 0 or c.c >= BOARD_COLUMNS))
@@ -820,11 +851,13 @@ Coordinate Board::GetGoodStairLocation(Room & room) {
 	return retval;
 }
 
+// Report whether the coordinate is the level's downward staircase.
 bool Board::IsDownstairs(Coordinate & c) {
 	return IsAStairway(c) and
 			cells[c.r][c.c].original_c == DOWN_STAIRS;
 }
 
+// Report whether the coordinate is the level's upward staircase.
 bool Board::IsUpstairs(Coordinate & c) {
 	return IsAStairway(c) and
 			cells[c.r][c.c].original_c == UP_STAIRS;
@@ -840,6 +873,7 @@ bool Board::IsUpstairs(Coordinate & c) {
 	being "flattened."
 */
 
+// Recover corridor connectivity for rooms missed by the main planner.
 bool Board::PlanBForCooridors(uint32_t room_index) {
 	Coordinate src = rooms.at(room_index).GetCentroid();
 	double smallest_distance = DBL_MAX;
@@ -865,6 +899,7 @@ bool Board::PlanBForCooridors(uint32_t room_index) {
 	return true;
 }
 
+// Flood-fill overlapping room regions so they share one final room id.
 void Board::FlattenRooms() {
 	vector<Coordinate> work_list;
 
@@ -927,6 +962,7 @@ void Board::FlattenRooms() {
 	}
 }
 
+// Dump a textual representation of selected board metadata to the log.
 void Board::DebugPrintBoard(int32_t mode) {
 	if (!my_log.is_open())
 		return;

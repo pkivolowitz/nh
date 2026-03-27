@@ -6,7 +6,9 @@
 #include "coordinate.hpp"
 
 struct Room {
+	// Randomize the room bounds and derived metadata.
 	void Initialize(int32_t rn);
+	// Return the cached center point of the room.
 	Coordinate GetCentroid();
 
 	Coordinate tl;

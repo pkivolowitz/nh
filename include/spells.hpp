@@ -7,6 +7,7 @@ enum Spells {
 };
 
 struct Spell {
+	// Initialize spell runtime state.
 	Spell();
 
 	int32_t last_cast_on_turn;

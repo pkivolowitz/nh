@@ -16,6 +16,7 @@ static string ConfigPath() {
 	return string(home) + "/.pnhrc";
 }
 
+// Load configuration from disk, creating a default file if needed.
 bool GameConfig::Load() {
 	string path = ConfigPath();
 	ifstream in(path);
@@ -47,6 +48,7 @@ bool GameConfig::Load() {
 	return true;
 }
 
+// Clamp invalid config values back to supported game options.
 void GameConfig::Validate() {
 	// Check role.
 	if (!FindRole(role)) {
@@ -88,6 +90,7 @@ void GameConfig::Validate() {
 	}
 }
 
+// Write a starter config file for first-time players.
 bool GameConfig::WriteDefault() const {
 	string path = ConfigPath();
 	ofstream out(path);

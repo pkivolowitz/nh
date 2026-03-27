@@ -42,6 +42,7 @@ static bool StrEqCI(const string & a, const string & b) {
 	return true;
 }
 
+// Convert an alignment enum to the display string used in config and UI.
 string AlignmentToString(Alignment a) {
 	switch (a) {
 		case Alignment::LAWFUL:  return "Lawful";
@@ -51,18 +52,21 @@ string AlignmentToString(Alignment a) {
 	return "Unknown";
 }
 
+// Parse a user-provided alignment string, defaulting to Neutral.
 Alignment StringToAlignment(const string & s) {
 	if (StrEqCI(s, "Lawful"))  return Alignment::LAWFUL;
 	if (StrEqCI(s, "Chaotic")) return Alignment::CHAOTIC;
 	return Alignment::NEUTRAL;
 }
 
+// Report whether a string names one of the supported alignments.
 bool IsValidAlignment(const string & s) {
 	return StrEqCI(s, "Lawful") ||
 		   StrEqCI(s, "Neutral") ||
 		   StrEqCI(s, "Chaotic");
 }
 
+// Find a role definition by name with case-insensitive matching.
 const RoleDef * FindRole(const string & name) {
 	for (auto & r : roles) {
 		if (StrEqCI(r.name, name)) return &r;
@@ -70,6 +74,7 @@ const RoleDef * FindRole(const string & name) {
 	return nullptr;
 }
 
+// Find a race definition by name with case-insensitive matching.
 const RaceDef * FindRace(const string & name) {
 	for (auto & r : races) {
 		if (StrEqCI(r.name, name)) return &r;
@@ -108,5 +113,7 @@ bool IsValidCombination(const string & role_name,
 	return in_role && in_race;
 }
 
+// Return the static list of role definitions.
 const vector<RoleDef> & GetAllRoles() { return roles; }
+// Return the static list of race definitions.
 const vector<RaceDef> & GetAllRaces() { return races; }

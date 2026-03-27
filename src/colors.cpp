@@ -3,6 +3,7 @@
 #include <ncurses.h>
 #include "colors.hpp"
 
+// Register the color pairs used while rendering the board and UI.
 void CursesColorSupport::Initialize() {
     start_color();
     use_default_colors();

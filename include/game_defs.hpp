@@ -9,8 +9,11 @@
 // artifact eligibility, prayer outcomes, and divine favor.
 enum class Alignment { LAWFUL, NEUTRAL, CHAOTIC };
 
+// Convert an alignment enum to the user-facing name.
 std::string AlignmentToString(Alignment a);
+// Parse a user-facing alignment name into the enum value.
 Alignment StringToAlignment(const std::string & s);
+// Report whether the string names a supported alignment.
 bool IsValidAlignment(const std::string & s);
 
 // Role definition: the 13 NetHack 3.6 character classes.
@@ -30,7 +33,9 @@ struct RaceDef {
 };
 
 // Lookup by name (case-insensitive). Returns nullptr if not found.
+// Find a role definition by name.
 const RoleDef * FindRole(const std::string & name);
+// Find a race definition by name.
 const RaceDef * FindRace(const std::string & name);
 
 // Validate that a role/race/alignment combination is legal.
@@ -39,5 +44,7 @@ bool IsValidCombination(const std::string & role,
 						const std::string & alignment);
 
 // Access the full tables for enumeration (e.g., character creation menus).
+// Return the full list of playable roles.
 const std::vector<RoleDef> & GetAllRoles();
+// Return the full list of playable races.
 const std::vector<RaceDef> & GetAllRaces();

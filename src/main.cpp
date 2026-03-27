@@ -49,6 +49,7 @@ static const int32_t MAP_WIN_COLS = BOARD_COLUMNS;
 // Gap between map and sidebar.
 static const int32_t SIDEBAR_GAP = 1;
 
+// Initialize ncurses and the game's shared color palette.
 void InitCurses() {
 	initscr();
 	ccs.Initialize();
@@ -58,6 +59,7 @@ void InitCurses() {
 	curs_set(0);
 }
 
+// Restore terminal settings before exiting.
 void TakedownCurses() {
 	curs_set(1);
 	noraw();
@@ -65,6 +67,7 @@ void TakedownCurses() {
 	endwin();
 }
 
+// Open the optional debug log file in /tmp.
 bool StartLog() {
 	string log_file_name("/tmp/nh_log.txt");
 	my_log.open(log_file_name);
@@ -74,17 +77,20 @@ bool StartLog() {
 	return my_log.is_open();
 }
 
+// Report whether a key is one of the supported movement commands.
 bool IsMovementChar(int32_t c) {
 	static string movement_characters = "hjkluybnHJKLUYBN";
 	return movement_characters.find(char(c)) != movement_characters.npos;
 }
 
+// Report whether moving between these cell types crosses a boundary.
 bool IsTransitioningBetweenCooridorAndRoom(CellBaseType a, CellBaseType b) {
 	return a != b;
 }
 
 // Convert a vi-key movement character to a (dr, dc) offset.
 // Returns false if the key is not a valid direction.
+// Convert a movement key into row and column deltas.
 bool DirectionFromKey(int32_t key, int32_t & dr, int32_t & dc) {
 	dr = dc = 0;
 	switch (tolower(key)) {
@@ -243,6 +249,7 @@ void RenderSidebar(WINDOW * sidebar_win, Player & player, int32_t sidebar_rows) 
 	wrefresh(sidebar_win);
 }
 
+// Run the main game loop, including input, movement, and rendering.
 int main(int argc, char * argv[]) {
 	srand(uint32_t(time(nullptr)));
 

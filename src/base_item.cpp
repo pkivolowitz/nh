@@ -2,6 +2,7 @@
 
 #include "items.hpp"
 
+// Initialize a base item with harmless placeholder values.
 BaseItem::BaseItem() {
 	type = BASE_ITEM;
 	weight_per_item = 0;
@@ -10,9 +11,11 @@ BaseItem::BaseItem() {
 	item_name = "Generic Proxy Item";
 }
 
+// Allow destruction through BaseItem pointers.
 BaseItem::~BaseItem() {
 }
 
+// Base items do not stack unless a subclass says otherwise.
 bool BaseItem::CanStackWith(const BaseItem & /*other*/) const {
 	return false;
 }

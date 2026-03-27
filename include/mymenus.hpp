@@ -10,10 +10,14 @@ using ItemVector = std::vector<std::string>;
 
 class MyMenu {
 public:
+    // Initialize menu-owned pointers and allocate the MENU handle.
     MyMenu();
+    // Release menu-owned ncurses resources.
     virtual ~MyMenu();
 
+    // Build a menu from the provided item strings.
     bool Initialize(ItemVector & );
+    // Return the width of the widest item label.
     int MaxItemWidth(ItemVector &);
 
     MENU * m;

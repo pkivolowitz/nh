@@ -35,6 +35,7 @@ void Room::Initialize(int32_t rn) {
 }
 
 
+// Return the room's cached center point.
 Coordinate Room::GetCentroid() {
 	return centroid;
 }

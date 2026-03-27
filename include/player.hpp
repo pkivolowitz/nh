@@ -22,8 +22,11 @@ enum Traits {
 
 struct Player {
 	Player();
+	// Release any player-owned resources.
 	virtual ~Player();
+	// Populate any additional runtime state after construction.
 	void Initialize();
+	// Draw the player glyph on the map window.
 	void Display(WINDOW * win);
 
 	int32_t current_traits[TRAIT_COUNT];
@@ -45,14 +48,19 @@ struct Player {
 	// First empty inventory slot as a letter, or 0 if full.
 	char NextAvailableLetter() const;
 
+	// Return the total weight of every item in inventory.
 	int32_t WeightOfInventory() const;
+	// Return the sum of item counts across all occupied slots.
 	int32_t TotalInventoryCount() const;
+	// Return the number of occupied inventory slots.
 	size_t InventoryCount() const;
 
 	// Render the inventory sidebar into the given window.
 	void RenderSidebar(WINDOW * win, bool detail_mode) const;
 
+	// Build the lower status line string.
 	std::string to_string_1();
+	// Build the upper status line string.
 	std::string to_string_2();
 
 	std::string name;

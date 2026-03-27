@@ -4,6 +4,7 @@
 
 using namespace std;
 
+// Initialize menu pointers and create an empty MENU handle.
 MyMenu::MyMenu() {
     m = nullptr;
     current_item = nullptr;
@@ -11,11 +12,13 @@ MyMenu::MyMenu() {
     m = new_menu(nullptr);
 }
 
+// Tear down menu resources owned by this wrapper.
 MyMenu::~MyMenu() {
     if (m) {
     }
 }
 
+// Prepare the menu state from the supplied item labels.
 bool MyMenu::Initialize(ItemVector & items) {
     bool retval = false;
     (void)MaxItemWidth(items);
@@ -23,6 +26,7 @@ bool MyMenu::Initialize(ItemVector & items) {
     return retval;
 }
 
+// Measure the widest menu label for layout calculations.
 int MyMenu::MaxItemWidth(ItemVector & items) {
     int max_width = 0;
 

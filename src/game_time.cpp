@@ -4,9 +4,11 @@
 
 using namespace std;
 
+// Construct the lightweight wall-clock helper.
 GameTime::GameTime() {
 }
 
+// Return the current local time in HH:MM:SS format.
 string GameTime::GetCurrentTime() {
 	struct timeval tv;
 	time_t nowtime;

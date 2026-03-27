@@ -36,6 +36,7 @@ static const int32_t DOOR_CLOSED_SYM = '+';
 	in lit rooms to be marked lit which otherwise they could not be.
 */
 struct Cell {
+	// Initialize a cell to its zero / empty defaults.
 	Cell();
 	CellBaseType base_type;
 	int32_t original_c;

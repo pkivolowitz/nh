@@ -11,6 +11,7 @@
 
 using namespace std;
 
+// Roll the player's starting stats and baseline progression values.
 Player::Player() {
 	// Roll each stat-based trait independently.
 	current_traits[INTELLIGENCE] = maximum_traits[INTELLIGENCE] = RR(12, 18);
@@ -23,13 +24,16 @@ Player::Player() {
 	current_traits[EXPERIENCE] = maximum_traits[EXPERIENCE] = 0;
 }
 
+// Defaulted because inventory ownership is handled by unique_ptr.
 Player::~Player() {
 	// unique_ptr handles cleanup automatically.
 }
 
+// Placeholder hook for future post-construction setup.
 void Player::Initialize() {
 }
 
+// Draw the player avatar at the current position.
 void Player::Display(WINDOW * win) {
 	wattron(win, COLOR_PAIR(CLR_PLAYER));
 	wattron(win, A_BOLD);
@@ -38,6 +42,7 @@ void Player::Display(WINDOW * win) {
 	wattroff(win, COLOR_PAIR(CLR_PLAYER));
 }
 
+// Find the first open inventory slot and return its letter.
 char Player::NextAvailableLetter() const {
 	for (int32_t i = 0; i < MAX_INVENTORY_SLOTS; i++) {
 		if (!inventory[i]) {
@@ -47,6 +52,7 @@ char Player::NextAvailableLetter() const {
 	return 0;
 }
 
+// Move an item into the next free inventory slot.
 char Player::AddToInventory(unique_ptr<BaseItem> & item) {
 	char letter = NextAvailableLetter();
 	if (letter == 0) return 0;
@@ -57,12 +63,14 @@ char Player::AddToInventory(unique_ptr<BaseItem> & item) {
 	return letter;
 }
 
+// Remove and return the item stored in the named inventory slot.
 unique_ptr<BaseItem> Player::RemoveFromInventory(char letter) {
 	int32_t idx = LetterToIndex(letter);
 	if (idx < 0 || idx >= MAX_INVENTORY_SLOTS) return nullptr;
 	return std::move(inventory[idx]);
 }
 
+// Sum the weight of all carried items.
 int32_t Player::WeightOfInventory() const {
 	int32_t total_weight = 0;
 	for (auto & item : inventory) {
@@ -73,6 +81,7 @@ int32_t Player::WeightOfInventory() const {
 	return total_weight;
 }
 
+// Count the total number of item instances carried, including stacks.
 int32_t Player::TotalInventoryCount() const {
 	int32_t total_items = 0;
 	for (auto & item : inventory) {
@@ -83,6 +92,7 @@ int32_t Player::TotalInventoryCount() const {
 	return total_items;
 }
 
+// Count the number of occupied inventory slots.
 size_t Player::InventoryCount() const {
 	size_t count = 0;
 	for (auto & item : inventory) {
@@ -91,6 +101,7 @@ size_t Player::InventoryCount() const {
 	return count;
 }
 
+// Render the inventory panel and its summary information.
 void Player::RenderSidebar(WINDOW * win, bool detail_mode) const {
 	int32_t max_rows, max_cols;
 	getmaxyx(win, max_rows, max_cols);
@@ -169,6 +180,7 @@ static string FormatStat(const char * label, int32_t cur, int32_t max, int w) {
 	return buf;
 }
 
+// Build the status line containing name, role, and volatile stats.
 string Player::to_string_2() {
 	// "Name the Role" left-justified, then fixed-width stat blocks.
 	// Title format matches NetHack: "Perry the Caveman"
@@ -187,6 +199,7 @@ string Player::to_string_2() {
 	return buf;
 }
 
+// Build the status line containing ancestry and inventory summary.
 string Player::to_string_1() {
 	// Race and alignment, then stat blocks aligned under line 1.
 	string desc = race + " " + alignment;

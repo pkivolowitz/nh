@@ -36,7 +36,9 @@ inline char IndexToLetter(int32_t i) {
 
 struct BaseItem {
 public:
+	// Initialize a generic placeholder item.
 	BaseItem();
+	// Destroy an item through the base type safely.
 	virtual ~BaseItem();
 
 	ItemType type;
@@ -45,6 +47,7 @@ public:
 	int32_t symbol;
 	std::string item_name;
 
+	// Return the total carried weight of this item stack.
 	inline int32_t Weight() {
 		return weight_per_item * number_of_like_items;
 	}
@@ -56,6 +59,7 @@ public:
 };
 
 struct Spellbook : public BaseItem {
+	// Initialize a placeholder spellbook floor item.
 	Spellbook();
 	// Spellbooks never stack — each contains a different spell.
 	bool CanStackWith(const BaseItem & /*other*/) const override {

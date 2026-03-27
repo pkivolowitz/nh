@@ -5,6 +5,7 @@ using namespace std;
 
 ItemVector items;
 
+// Populate the demo menu with placeholder items.
 void MakeItems() {
     items.push_back("Select one:");
     items.push_back("a) Foo");
@@ -12,6 +13,7 @@ void MakeItems() {
     items.push_back("c) Baz");
 }
 
+// Initialize ncurses for the standalone menu test program.
 void InitCurses() {
     initscr();
     start_color();
@@ -22,6 +24,7 @@ void InitCurses() {
     curs_set(0);
 }
 
+// Restore terminal state for the standalone menu test program.
 void EndCurses() {
     curs_set(1);
     keypad(stdscr, FALSE);
@@ -30,6 +33,7 @@ void EndCurses() {
     endwin();
 }
 
+// Exercise the menu prototype in isolation.
 int main(int argc, char ** argv) {
     MyMenu menu;
     void FillScreen();
@@ -48,6 +52,7 @@ int main(int argc, char ** argv) {
     return 0;
 }
 
+// Fill the terminal with asterisks so menu rendering stands out.
 void FillScreen() {
     string text;
     text.resize(COLS);
