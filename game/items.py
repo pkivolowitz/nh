@@ -1,0 +1,84 @@
+# Copyright (c) 2026 Perry Kivolowitz. All rights reserved.
+
+"""Item types, base item, and concrete item classes."""
+
+from __future__ import annotations
+
+__version__ = "0.1.0"
+
+from enum import IntEnum, auto
+
+from game.constants import MAX_INVENTORY_SLOTS
+
+
+class ItemType(IntEnum):
+    """Discriminant for polymorphic item serialization."""
+    BASE_ITEM = 0
+    POTION = auto()
+    SCROLL = auto()
+    SPELLBOOK = auto()
+
+
+def letter_to_index(c: str) -> int:
+    """Convert an inventory letter to a slot index.
+
+    a-z → 0-25, A-Z → 26-51, anything else → -1.
+    """
+    if "a" <= c <= "z":
+        return ord(c) - ord("a")
+    if "A" <= c <= "Z":
+        return ord(c) - ord("A") + 26
+    return -1
+
+
+def index_to_letter(i: int) -> str:
+    """Convert a slot index to an inventory letter.
+
+    0-25 → a-z, 26-51 → A-Z, out of range → '?'.
+    """
+    if 0 <= i < 26:
+        return chr(ord("a") + i)
+    if 26 <= i < 52:
+        return chr(ord("A") + (i - 26))
+    return "?"
+
+
+class BaseItem:
+    """Generic inventory/floor item.
+
+    Subclasses override ``can_stack_with`` for stackable types.
+    """
+
+    __slots__ = ("type", "weight_per_item", "number_of_like_items",
+                 "symbol", "item_name")
+
+    def __init__(self) -> None:
+        self.type: ItemType = ItemType.BASE_ITEM
+        self.weight_per_item: int = 0
+        self.number_of_like_items: int = 1
+        self.symbol: int = ord("?")
+        self.item_name: str = "Unknown Item"
+
+    def weight(self) -> int:
+        """Total carried weight of this item stack."""
+        return self.weight_per_item * self.number_of_like_items
+
+    def can_stack_with(self, other: BaseItem) -> bool:
+        """Whether *other* can merge into this stack.  Default: no."""
+        return False
+
+
+class Spellbook(BaseItem):
+    """A spellbook found on the dungeon floor."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.type = ItemType.SPELLBOOK
+        self.symbol = ord("+")
+        self.weight_per_item = 5
+        self.number_of_like_items = 1
+        self.item_name = "Unknown Spellbook"
+
+    def can_stack_with(self, other: BaseItem) -> bool:
+        """Spellbooks never stack — each contains a different spell."""
+        return False
