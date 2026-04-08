@@ -26,12 +26,66 @@ from game.constants import (
     UP_STAIRS,
     DOOR_CLOSED_SYM,
     DEFAULT_TORCH_RADIUS,
+    MONSTER_ROOM_CHANCE,
+    TORCH_LIGHT_RADIUS,
+    TORCH_ROOM_CHANCE,
+    MAX_TORCHES_PER_ROOM,
+    NOISE_WALL_ATTENUATION,
+    NOISE_FAINT_THRESHOLD,
+    NOISE_LOUD_THRESHOLD,
 )
 from game.cell import Cell, CellBaseType, DoorState
 from game.coordinate import Coordinate
 from game.room import Room
 from game.items import BaseItem, Spellbook
 from game.drawing_support import corner_map
+from game.monster import Monster, MonsterSpecies, get_eligible_species
+
+
+class NoiseEvent:
+    """A sound emitted at *pos* with intensity *level*.
+
+    ``description`` is used when the player hears the noise
+    (e.g. "soft padding of paws").  ``is_monster`` distinguishes
+    noise the player should be told about (monsters) from noise the
+    player generated themselves (already known).
+    """
+
+    __slots__ = ("pos", "level", "description", "is_monster")
+
+    def __init__(self, pos: "Coordinate", level: int,
+                 description: str = "",
+                 is_monster: bool = False) -> None:
+        self.pos: Coordinate = pos
+        self.level: int = level
+        self.description: str = description
+        self.is_monster: bool = is_monster
+
+
+def _direction_word(dr: int, dc: int) -> str:
+    """Convert a (row, col) delta sign pair to a compass word."""
+    if dr < 0 and dc == 0:
+        return "north"
+    if dr > 0 and dc == 0:
+        return "south"
+    if dr == 0 and dc < 0:
+        return "west"
+    if dr == 0 and dc > 0:
+        return "east"
+    if dr < 0 and dc < 0:
+        return "northwest"
+    if dr < 0 and dc > 0:
+        return "northeast"
+    if dr > 0 and dc < 0:
+        return "southwest"
+    if dr > 0 and dc > 0:
+        return "southeast"
+    return "nearby"
+
+
+def _sign(x: int) -> int:
+    """Return -1, 0, or +1 for the sign of *x*."""
+    return (x > 0) - (x < 0)
 
 
 class Board:
@@ -49,6 +103,9 @@ class Board:
         ]
         self.rooms: list[Room] = []
         self.goodies: dict[Coordinate, list[BaseItem]] = {}
+        self.monsters: dict[Coordinate, Monster] = {}
+        self.torches: list[Coordinate] = []
+        self.noise_sources: list[NoiseEvent] = []
         self.upstairs: Coordinate = Coordinate()
         self.downstairs: Coordinate = Coordinate()
         self._create()
@@ -122,6 +179,248 @@ class Board:
         return -1
 
     # ------------------------------------------------------------------
+    # Monster management
+    # ------------------------------------------------------------------
+
+    def add_monster(self, monster: Monster) -> None:
+        """Place a monster on the board at its current position."""
+        self.monsters[monster.pos] = monster
+
+    def remove_monster(self, pos: Coordinate) -> Optional[Monster]:
+        """Remove and return the monster at *pos*, or None."""
+        return self.monsters.pop(pos, None)
+
+    def get_monster_at(self, pos: Coordinate) -> Optional[Monster]:
+        """Return the monster at *pos*, or None."""
+        return self.monsters.get(pos)
+
+    def get_all_monsters(self) -> list[Monster]:
+        """Return a snapshot list of all living monsters on this level."""
+        return list(self.monsters.values())
+
+    def get_monsters_near(self, pos: Coordinate,
+                          radius: float) -> list[Monster]:
+        """Return monsters within *radius* Euclidean distance of *pos*."""
+        return [
+            m for m in self.monsters.values()
+            if m.pos.distance(pos) <= radius
+        ]
+
+    def move_monster(self, monster: Monster,
+                     new_pos: Coordinate) -> None:
+        """Relocate a monster from its current cell to *new_pos*."""
+        self.monsters.pop(monster.pos, None)
+        monster.pos = new_pos
+        self.monsters[new_pos] = monster
+
+    # ------------------------------------------------------------------
+    # Noise system — actions emit sound that monsters and the player hear
+    # ------------------------------------------------------------------
+
+    def emit_noise(self, pos: Coordinate, level: int,
+                   description: str = "",
+                   is_monster: bool = False) -> None:
+        """Register a noise event at *pos*.
+
+        The noise persists until cleared (typically at the start of
+        the next game step).  ``description`` and ``is_monster`` are
+        used when generating hear messages for the player.
+        """
+        self.noise_sources.append(
+            NoiseEvent(pos, level, description, is_monster)
+        )
+
+    def clear_noise(self) -> None:
+        """Discard all pending noise events."""
+        self.noise_sources.clear()
+
+    def noise_at(self, pos: Coordinate) -> tuple[float, Optional[Coordinate]]:
+        """Return (loudest heard level, source position) at *pos*.
+
+        Returns (0.0, None) if nothing is audible.  Used by monster
+        brains to perceive nearby noises.
+        """
+        best_level: float = 0.0
+        best_source: Optional[Coordinate] = None
+        for event in self.noise_sources:
+            heard: float = self._noise_propagation(
+                event.pos, pos, event.level
+            )
+            if heard > best_level:
+                best_level = heard
+                best_source = event.pos
+        return best_level, best_source
+
+    def _noise_propagation(self, source: Coordinate, target: Coordinate,
+                           level: int) -> float:
+        """How much of *level* noise at *source* reaches *target*.
+
+        Attenuation = Euclidean distance + (walls crossed * wall penalty).
+        Clamped at zero; inaudible returns 0.
+        """
+        if source.r == target.r and source.c == target.c:
+            return float(level)
+        dist: float = source.distance(target)
+        walls: int = self._walls_along_path(source, target)
+        heard: float = level - dist - walls * NOISE_WALL_ATTENUATION
+        return max(0.0, heard)
+
+    def _walls_along_path(self, source: Coordinate,
+                          target: Coordinate) -> int:
+        """Count wall and closed-door cells along the straight line.
+
+        The source and target cells themselves are not counted.
+        """
+        dist: float = source.distance(target)
+        if dist <= 1.0:
+            return 0
+        delta: float = 1.0 / (dist + 1.0)
+        t: float = delta
+        walls: int = 0
+        seen: set[tuple[int, int]] = set()
+        src_key: tuple[int, int] = (source.r, source.c)
+        tgt_key: tuple[int, int] = (target.r, target.c)
+        while t < 1.0:
+            s = source.lerp(target, t)
+            key: tuple[int, int] = (s.r, s.c)
+            if key in seen or key == src_key or key == tgt_key:
+                t += delta
+                continue
+            seen.add(key)
+            cell = self.cells[s.r][s.c]
+            if cell.base_type == CellBaseType.WALL:
+                walls += 1
+            elif (cell.base_type == CellBaseType.DOOR
+                  and cell.door_state in (DoorState.DOOR_CLOSED,
+                                          DoorState.DOOR_LOCKED,
+                                          DoorState.DOOR_STUCK)):
+                walls += 1
+            t += delta
+        return walls
+
+    def get_player_hear_messages(self, player_pos: Coordinate,
+                                 player_tr: float) -> list[str]:
+        """Build hear messages for monster noises audible at *player_pos*.
+
+        Only includes monster-sourced noise the player can't already
+        see (no point reporting what you can visually track).
+        Deduplicates by (description, direction) so multiple jackals
+        moving south produce one message, not many.
+        """
+        heard_sounds: dict[tuple[str, str], float] = {}
+
+        for event in self.noise_sources:
+            if not event.is_monster:
+                continue
+            if not event.description:
+                continue
+
+            # Skip if the player can currently see this position.
+            visible: bool = (
+                event.pos.distance(player_pos) < player_tr
+                and self.line_of_sight(player_pos, event.pos)
+            )
+            if not visible:
+                ecell = self.cells[event.pos.r][event.pos.c]
+                visible = (ecell.lit
+                           and self.line_of_sight(player_pos, event.pos))
+            if visible:
+                continue
+
+            heard: float = self._noise_propagation(
+                event.pos, player_pos, event.level
+            )
+            if heard < NOISE_FAINT_THRESHOLD:
+                continue
+
+            dr: int = _sign(event.pos.r - player_pos.r)
+            dc: int = _sign(event.pos.c - player_pos.c)
+            direction: str = _direction_word(dr, dc)
+            key: tuple[str, str] = (event.description, direction)
+            if heard > heard_sounds.get(key, 0.0):
+                heard_sounds[key] = heard
+
+        messages: list[str] = []
+        for (description, direction), level in heard_sounds.items():
+            if level >= NOISE_LOUD_THRESHOLD:
+                messages.append(
+                    f"You hear a loud {description} to your {direction}!"
+                )
+            else:
+                messages.append(
+                    f"You hear a {description} to your {direction}."
+                )
+        return messages
+
+    # ------------------------------------------------------------------
+    # Monster spawning (called by engine after player placement)
+    # ------------------------------------------------------------------
+
+    def place_monsters(self, player_pos: Coordinate,
+                       dungeon_level: int) -> None:
+        """Spawn monsters on this level.
+
+        Monsters never spawn in the room containing *player_pos*.
+        Pack species spawn in groups of 2-4.
+        """
+        eligible: list[MonsterSpecies] = get_eligible_species(dungeon_level)
+        if not eligible:
+            return
+
+        player_room: int = self.cells[player_pos.r][player_pos.c].final_room_number
+
+        for rm in self.rooms:
+            centroid: Coordinate = rm.get_centroid()
+            room_id: int = self.cells[centroid.r][centroid.c].final_room_number
+            if room_id == player_room:
+                continue
+
+            # Roll whether this room gets monsters.
+            if self.rng.randint(1, 100) > MONSTER_ROOM_CHANCE:
+                continue
+
+            species: MonsterSpecies = self._pick_species(eligible)
+
+            # Pack species spawn in groups; solo species spawn alone.
+            count: int = 1
+            if "pack" in species.flags:
+                count = self.rng.randint(
+                    species.spawn_group_min, species.spawn_group_max
+                )
+
+            positions: list[Coordinate] = self._find_monster_positions(rm, count)
+            for pos in positions:
+                monster: Monster = Monster(species, pos, self.rng)
+                self.add_monster(monster)
+
+    def _pick_species(self,
+                      eligible: list[MonsterSpecies]) -> MonsterSpecies:
+        """Choose a species weighted by spawn frequency."""
+        total_freq: int = sum(s.frequency for s in eligible)
+        roll: int = self.rng.randint(1, total_freq)
+        cumulative: int = 0
+        for s in eligible:
+            cumulative += s.frequency
+            if roll <= cumulative:
+                return s
+        return eligible[-1]
+
+    def _find_monster_positions(self, room: Room,
+                                count: int) -> list[Coordinate]:
+        """Find valid floor positions in *room* for monster placement."""
+        candidates: list[Coordinate] = []
+        for r in range(room.tl.r, room.br.r):
+            for c in range(room.tl.c, room.br.c):
+                coord: Coordinate = Coordinate(r, c)
+                if (self.is_navigable(coord)
+                        and not self.is_a_stairway(coord)
+                        and coord not in self.monsters
+                        and coord not in self.goodies):
+                    candidates.append(coord)
+        self.rng.shuffle(candidates)
+        return candidates[:count]
+
+    # ------------------------------------------------------------------
     # Door interaction
     # ------------------------------------------------------------------
 
@@ -193,10 +492,15 @@ class Board:
 
     def update_visibility(self, pos: Coordinate,
                           tr: float = DEFAULT_TORCH_RADIUS) -> None:
-        """Mark cells within torch range and LOS as known.
+        """Mark cells visible from *pos* as known.
 
-        Called by the engine after every action so that both the
-        renderer and headless AI see consistent ``is_known`` flags.
+        A cell is visible if the player has line of sight to it AND
+        either:
+          - it lies within the player's personal torch radius, OR
+          - it is illuminated by a dungeon torch (cell.lit is True).
+
+        This means the player sees lit areas across the room even
+        when they're well beyond personal torch range.
         """
         for r in range(BOARD_ROWS):
             for c in range(BOARD_COLUMNS):
@@ -206,7 +510,8 @@ class Board:
                 if cell.is_known:
                     continue
                 coord = Coordinate(r, c)
-                if coord.distance(pos) >= tr:
+                within_personal: bool = coord.distance(pos) < tr
+                if not (within_personal or cell.lit):
                     continue
                 if not self.line_of_sight(pos, coord):
                     continue
@@ -274,6 +579,7 @@ class Board:
             "downstairs": self.downstairs.to_tuple(),
             "rooms": [(rm.tl.r, rm.tl.c, rm.br.r, rm.br.c)
                       for rm in self.rooms],
+            "monsters": [m.get_state() for m in self.monsters.values()],
         }
 
     # ==================================================================
@@ -292,6 +598,7 @@ class Board:
         self._place_corridors()
         self._place_doors()
         self._flatten_rooms()
+        self._place_torches()
         self._place_stairs()
         self._place_goodies()
 
@@ -601,6 +908,121 @@ class Board:
                             continue
                         nb.has_been_added_to_work_list = True
                         work_list.append(Coordinate(nr, nc))
+
+    # -- torch lighting ------------------------------------------------
+
+    def _place_torches(self) -> None:
+        """Place wall torches in rooms and compute lit cells.
+
+        Each room has a chance to receive 1-3 torches on random
+        interior wall positions.  After placement, cells within
+        TORCH_LIGHT_RADIUS of any torch are marked lit (subject to
+        line of sight from the torch -- light doesn't pass through
+        walls or closed doors).  Overlapping torches can illuminate
+        an entire room.
+        """
+        for rm in self.rooms:
+            if self.rng.randint(1, 100) > TORCH_ROOM_CHANCE:
+                continue  # This room stays dark.
+
+            candidates: list[Coordinate] = self._find_torch_positions(rm)
+            if not candidates:
+                continue
+
+            count: int = self.rng.randint(
+                1, min(MAX_TORCHES_PER_ROOM, len(candidates))
+            )
+            self.rng.shuffle(candidates)
+            for pos in candidates[:count]:
+                self.torches.append(pos)
+
+        self._compute_lighting()
+
+    def _find_torch_positions(self, rm: Room) -> list[Coordinate]:
+        """Find wall cells around a room suitable for torch placement.
+
+        Torches go on wall cells that are adjacent to the room's
+        interior floor.  Door cells are skipped.
+        """
+        positions: list[Coordinate] = []
+
+        # Top and bottom walls.
+        for c in range(rm.tl.c, rm.br.c):
+            for r in (rm.tl.r - 1, rm.br.r):
+                if 0 <= r < BOARD_ROWS:
+                    if self.cells[r][c].base_type == CellBaseType.WALL:
+                        positions.append(Coordinate(r, c))
+
+        # Left and right walls.
+        for r in range(rm.tl.r, rm.br.r):
+            for c in (rm.tl.c - 1, rm.br.c):
+                if 0 <= c < BOARD_COLUMNS:
+                    if self.cells[r][c].base_type == CellBaseType.WALL:
+                        positions.append(Coordinate(r, c))
+
+        return positions
+
+    def _compute_lighting(self) -> None:
+        """Mark cells within torch radius as lit.
+
+        Uses a bounding box per torch for efficiency.  Light respects
+        LOS from the torch position (via _torch_los, which skips the
+        wall the torch is mounted on).
+        """
+        for torch_pos in self.torches:
+            # Tag the torch's own wall cell as lit so it renders.
+            self.cells[torch_pos.r][torch_pos.c].lit = True
+
+            min_r: int = max(0, int(torch_pos.r - TORCH_LIGHT_RADIUS) - 1)
+            max_r: int = min(BOARD_ROWS,
+                             int(torch_pos.r + TORCH_LIGHT_RADIUS) + 2)
+            min_c: int = max(0, int(torch_pos.c - TORCH_LIGHT_RADIUS) - 1)
+            max_c: int = min(BOARD_COLUMNS,
+                             int(torch_pos.c + TORCH_LIGHT_RADIUS) + 2)
+
+            for r in range(min_r, max_r):
+                for c in range(min_c, max_c):
+                    cell = self.cells[r][c]
+                    if cell.base_type == CellBaseType.EMPTY:
+                        continue
+                    coord = Coordinate(r, c)
+                    if coord.distance(torch_pos) > TORCH_LIGHT_RADIUS:
+                        continue
+                    if self._torch_los(torch_pos, coord):
+                        cell.lit = True
+
+    def _torch_los(self, torch_pos: Coordinate,
+                   target: Coordinate) -> bool:
+        """Line of sight from a wall-mounted torch to *target*.
+
+        Similar to line_of_sight but skips the torch's own wall cell.
+        Integer truncation in Coordinate.lerp causes small parameter
+        values to still return the origin cell, so we explicitly skip
+        any ray step that lands on torch_pos -- the wall the torch is
+        mounted on must not block its own light.
+        """
+        dist: float = torch_pos.distance(target)
+        if dist <= 1.0:
+            return True
+        delta: float = 1.0 / (dist + 1.0)
+        t: float = delta
+        while t < 1.0:
+            s = torch_pos.lerp(target, t)
+            # Skip any ray step still on the torch's own wall cell.
+            if s.r == torch_pos.r and s.c == torch_pos.c:
+                t += delta
+                continue
+            cell = self.cells[s.r][s.c]
+            door_blocks: bool = (
+                cell.base_type == CellBaseType.DOOR
+                and cell.door_state not in (DoorState.DOOR_OPEN,
+                                            DoorState.DOOR_MISSING)
+            )
+            if (cell.base_type in (CellBaseType.EMPTY, CellBaseType.WALL)
+                    or door_blocks):
+                return False
+            t += delta
+        return True
 
     # -- stairs --------------------------------------------------------
 

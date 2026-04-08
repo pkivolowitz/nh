@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Perry Kivolowitz. All rights reserved.
 
-"""PNH — Perry's NetHack-inspired roguelike.
+"""PNH -- Perry's NetHack-inspired roguelike.
 
 Usage:
     python play.py [-n NAME] [-s SEED] [-c] [--ai] [--ai-speed MS]
@@ -9,7 +9,7 @@ Usage:
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 import argparse
 import curses
@@ -19,6 +19,8 @@ import time
 from game.engine import GameEngine, StepResult
 from game.renderer import Renderer
 from game.config import GameConfig
+from game.brain import BrainRegistry
+from game.constants import DEFAULT_TORCH_RADIUS
 from game.actions import (
     Action, Direction,
     VI_KEY_TO_DIRECTION, DIRECTION_TO_ACTION,
@@ -71,7 +73,13 @@ def _ai_loop(engine: GameEngine, renderer: Renderer,
             msg = f"{result.message}  |  {msg}"
         renderer.show_message(msg)
 
-        # Check for quit — non-blocking.
+        # Player died.
+        if result.done:
+            renderer.show_message("AI died! Press any key to exit.")
+            renderer.getch_blocking()
+            break
+
+        # Check for quit -- non-blocking.
         renderer.map_win.timeout(int(speed_ms))
         c = renderer.map_win.getch()
         if c == ord("q"):
@@ -85,8 +93,18 @@ def _ai_loop(engine: GameEngine, renderer: Renderer,
         renderer.map_win.timeout(50)  # Restore default.
 
 
+def _monster_visible(engine: GameEngine) -> bool:
+    """True if any monster is visible to the player right now."""
+    pos = engine.player.pos
+    for m in engine.board.get_all_monsters():
+        if (m.pos.distance(pos) < DEFAULT_TORCH_RADIUS
+                and engine.board.line_of_sight(pos, m.pos)):
+            return True
+    return False
+
+
 def _main(stdscr: curses.window) -> None:
-    """Curses main loop — called inside ``curses.wrapper``."""
+    """Curses main loop -- called inside ``curses.wrapper``."""
     args = parse_args()
 
     # Load config.
@@ -115,6 +133,7 @@ def _main(stdscr: curses.window) -> None:
     # AI mode.
     if args.ai:
         _ai_loop(engine, renderer, args.ai_speed)
+        BrainRegistry.save_all()
         return
 
     # Digit accumulator for numeric qualifiers.
@@ -123,6 +142,17 @@ def _main(stdscr: curses.window) -> None:
     last_message: str = ""
 
     while True:
+        # Check for game over (player may have died last turn).
+        if not engine.player.is_alive:
+            renderer.draw(
+                engine.board, engine.player,
+                engine.current_board_index + 1,
+                engine.turn_counter,
+            )
+            renderer.show_message(last_message or "You died!")
+            renderer.getch_blocking()
+            break
+
         # Build the persistent message for this frame.
         display_msg = last_message
         if not display_msg:
@@ -142,7 +172,7 @@ def _main(stdscr: curses.window) -> None:
         if display_msg:
             renderer.show_message(display_msg)
 
-        # Input loop — poll with 50ms timeout, only update the clock.
+        # Input loop -- poll with 50ms timeout, only update the clock.
         c = renderer.getch()
         while c == -1:  # ERR
             renderer.update_clock()
@@ -180,11 +210,12 @@ def _main(stdscr: curses.window) -> None:
             action = DIRECTION_TO_ACTION[direction]
 
             steps = numeric_qualifier if numeric_qualifier > 0 else 1
-            if ch.isupper():
+            running: bool = ch.isupper()
+            if running:
                 steps = 999  # Run until blocked.
 
             for _ in range(steps):
-                result = engine.step(action)
+                result = engine.step(action, running=running)
                 last_message = result.message
 
                 # Re-render each step for animation.
@@ -199,6 +230,10 @@ def _main(stdscr: curses.window) -> None:
                 if not result.turn_used:
                     break  # Hit a wall.
 
+                # Stop running on death.
+                if result.done:
+                    break
+
                 # Stop running at interesting things.
                 pos = engine.player.pos
                 if engine.board.is_a_stairway(pos):
@@ -206,6 +241,10 @@ def _main(stdscr: curses.window) -> None:
                 if engine.board.is_door(pos):
                     break
                 if engine.board.get_symbol(pos) >= 0:
+                    break
+
+                # Stop running if a monster is visible.
+                if _monster_visible(engine):
                     break
 
                 # Check for room/corridor transition during run.
@@ -217,6 +256,12 @@ def _main(stdscr: curses.window) -> None:
                     time.sleep(0.02)
 
             numeric_qualifier = 0
+            continue
+
+        # Rest in place — world advances one turn (NetHack '.').
+        if c == ord("."):
+            result = engine.step(Action.WAIT)
+            last_message = result.message
             continue
 
         # Stairs.
@@ -268,6 +313,9 @@ def _main(stdscr: curses.window) -> None:
             continue
 
         numeric_qualifier = 0
+
+    # Persist all brain state learned during this session.
+    BrainRegistry.save_all()
 
 
 def main() -> None:

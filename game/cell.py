@@ -47,6 +47,7 @@ class Cell:
         "has_been_flattened",
         "has_been_added_to_work_list",
         "is_known",
+        "lit",
         "door_state",
         "door_horizontal",
     )
@@ -59,5 +60,6 @@ class Cell:
         self.has_been_flattened: bool = False
         self.has_been_added_to_work_list: bool = False
         self.is_known: bool = False
+        self.lit: bool = False
         self.door_state: DoorState = DoorState.DOOR_NONE
         self.door_horizontal: bool = False

@@ -122,9 +122,10 @@ class Renderer:
 
     def draw(self, board: Board, player: Player,
              current_level: int, turn: int) -> None:
-        """Render the complete frame: map, player, sidebar, status."""
+        """Render the complete frame: map, monsters, player, sidebar, status."""
         assert self.map_win is not None and self.sidebar_win is not None
         self._draw_board(board, player)
+        self._draw_monsters(board, player)
         self._draw_player(player)
         self._draw_status(board, player, current_level)
         self._draw_time()
@@ -199,6 +200,12 @@ class Renderer:
                     self._show_cell(board, coord, cell)
                     continue
 
+                # Lit cells that are known always render (lit rooms
+                # stay visible after the player has seen them).
+                if cell.is_known and cell.lit:
+                    self._show_cell(board, coord, cell)
+                    continue
+
                 # Beyond torch range.
                 if coord.distance(player.pos) >= tr:
                     continue
@@ -253,6 +260,42 @@ class Renderer:
         if sym in (ord("<"), ord(">")):
             return curses.A_BOLD
         return curses.A_NORMAL
+
+    # ------------------------------------------------------------------
+    # Monsters
+    # ------------------------------------------------------------------
+
+    def _draw_monsters(self, board: Board, player: Player,
+                       tr: float = DEFAULT_TORCH_RADIUS) -> None:
+        """Draw monsters visible to the player.
+
+        A monster is visible when the player has line of sight and
+        either the monster is within the player's personal torch
+        radius or the monster's cell is illuminated by a dungeon torch.
+        """
+        win = self.map_win
+        assert win is not None
+
+        for monster in board.get_all_monsters():
+            coord = monster.pos
+
+            if not self.show_original:
+                mcell = board.cells[coord.r][coord.c]
+                within_personal: bool = coord.distance(player.pos) < tr
+                if not (within_personal or mcell.lit):
+                    continue
+                if not board.line_of_sight(player.pos, coord):
+                    continue
+
+            attr = curses.color_pair(monster.color_pair)
+            win.attron(attr)
+            try:
+                win.addch(
+                    BOARD_TOP_OFFSET + coord.r, coord.c, monster.symbol
+                )
+            except curses.error:
+                pass
+            win.attroff(attr)
 
     # ------------------------------------------------------------------
     # Player

@@ -5,11 +5,14 @@
 The engine owns the authoritative game state and has *no* curses
 dependency.  It can run headless for batch ML training or be driven
 interactively through the renderer.
+
+Combat is resolved when a creature bumps into another.  Monster turns
+run after every player action via a speed-based energy system.
 """
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 import random
 from typing import Optional
@@ -18,6 +21,16 @@ from game.constants import (
     BOARD_COLUMNS,
     BOARD_ROWS,
     DEFAULT_TORCH_RADIUS,
+    ENERGY_THRESHOLD,
+    UNARMED_DICE,
+    UNARMED_SIDES,
+    UNARMED_VERBS,
+    UNARMED_KILL_VERBS,
+    NOISE_WALK,
+    NOISE_RUN,
+    NOISE_DROP,
+    NOISE_KICK,
+    NOISE_MELEE,
 )
 from game.cell import CellBaseType, DoorState
 from game.coordinate import Coordinate
@@ -27,6 +40,22 @@ from game.actions import (
     Action, Direction, DIRECTION_DELTA, ACTION_TO_DIRECTION,
 )
 from game.drawing_support import initialize_corner_map
+from game.combat import BumpAttack, CombatResult
+from game.brain import (
+    BrainRegistry,
+    REWARD_DEATH,
+    REWARD_DEAL_DAMAGE_SCALE,
+    REWARD_MOVE_TOWARD_PREY,
+    REWARD_MOVE_AWAY_PREY,
+    REWARD_FAILED_MOVE,
+    REWARD_WAIT,
+)
+from game.monster import Monster
+
+# Player's unarmed melee attack (placeholder until weapons exist).
+_PLAYER_UNARMED: BumpAttack = BumpAttack(
+    dice=UNARMED_DICE, sides=UNARMED_SIDES, verb="hit"
+)
 
 
 class StepResult:
@@ -47,26 +76,32 @@ class GameEngine:
 
     Public interface
     ----------------
-    step(action, **kwargs) → StepResult
+    step(action, **kwargs) -> StepResult
         Execute one discrete action and advance game state.
-    get_observation() → dict
+    get_observation() -> dict
         Machine-readable snapshot for agents.
     """
 
     def __init__(self, seed: Optional[int] = None) -> None:
         self.rng: random.Random = random.Random(seed)
         initialize_corner_map()
+        BrainRegistry.init()
 
         self.boards: list[Board] = []
         self.current_board_index: int = 0
         self.turn_counter: int = 0
         self.player: Player = Player(self.rng)
+        self._monsters_placed: set[int] = set()
 
         # Generate the first level.
         self._new_board()
         self.player.pos = Coordinate(
             self.board.upstairs.r, self.board.upstairs.c
         )
+        # Place monsters (never in the player's starting room).
+        self.board.place_monsters(self.player.pos, 1)
+        self._monsters_placed.add(0)
+
         # Mark the player's initial surroundings as known.
         self.board.update_visibility(self.player.pos)
 
@@ -81,23 +116,27 @@ class GameEngine:
 
     def step(self, action: Action, *,
              direction: Direction = Direction.NONE,
-             letter: str = "") -> StepResult:
+             letter: str = "",
+             running: bool = False) -> StepResult:
         """Execute *action* and return the result.
 
-        Parameters
-        ----------
-        action : Action
-            The discrete action to take.
-        direction : Direction
-            Required for OPEN_DOOR / CLOSE_DOOR.
-        letter : str
-            Required for DROP (inventory letter).
+        After the player acts, all monsters on the level accumulate
+        energy and take their turns if energy >= threshold.
+
+        ``running`` is True when the player is in a run (uppercase
+        vi-key movement); it selects the louder NOISE_RUN emission.
         """
+        # Clear stale noise from the previous step — every turn
+        # starts with a clean noise slate.
+        self.board.clear_noise()
+
         if action == Action.WAIT:
             self.turn_counter += 1
             result = StepResult(turn_used=True)
         elif action in ACTION_TO_DIRECTION:
-            result = self._handle_move(ACTION_TO_DIRECTION[action])
+            result = self._handle_move(
+                ACTION_TO_DIRECTION[action], running=running
+            )
         elif action == Action.STAIRS_DOWN:
             result = self._handle_stairs_down()
         elif action == Action.STAIRS_UP:
@@ -115,6 +154,35 @@ class GameEngine:
         else:
             result = StepResult(message="Unknown action.")
 
+        # Run monster turns after every player action that used a turn.
+        if result.turn_used and self.player.is_alive:
+            monster_msgs: list[str] = self._run_monster_turns()
+            if monster_msgs:
+                combined: str = result.message
+                for mm in monster_msgs:
+                    if combined:
+                        combined += " "
+                    combined += mm
+                result.message = combined
+
+        # Build hear messages for any monster noises the player can
+        # perceive but not see directly.
+        if self.player.is_alive:
+            hear_msgs: list[str] = self.board.get_player_hear_messages(
+                self.player.pos, DEFAULT_TORCH_RADIUS
+            )
+            for hm in hear_msgs:
+                if result.message:
+                    result.message += " " + hm
+                else:
+                    result.message = hm
+
+        # Check for player death (monsters may have killed the player).
+        if not self.player.is_alive:
+            result.done = True
+            if "die" not in result.message.lower():
+                result.message += " You die..."
+
         # Update visibility from the player's new position so both
         # the renderer and headless agents see consistent is_known.
         self.board.update_visibility(self.player.pos)
@@ -124,16 +192,26 @@ class GameEngine:
     # Movement
     # ------------------------------------------------------------------
 
-    def _handle_move(self, direction: Direction) -> StepResult:
-        """Move the player one step in *direction*."""
+    def _handle_move(self, direction: Direction, *,
+                     running: bool = False) -> StepResult:
+        """Move the player one step in *direction*.
+
+        Emits walking or running noise on a successful step.  Bumping
+        into a monster triggers melee combat instead.
+        """
         dr, dc = DIRECTION_DELTA[direction]
         target = Coordinate(self.player.pos.r + dr, self.player.pos.c + dc)
 
-        # Bounds check.
+        # Bounds check — silently stop at map edges.
         if not (0 <= target.r < BOARD_ROWS and 0 <= target.c < BOARD_COLUMNS):
-            return StepResult(message="You can't go there.")
+            return StepResult()
 
-        # Collision check.
+        # Monster at target -- bump to attack.
+        monster: Optional[Monster] = self.board.get_monster_at(target)
+        if monster:
+            return self._player_attacks_monster(monster)
+
+        # Terrain collision check.
         if not self.board.is_navigable(target):
             if self.board.is_door(target):
                 cell = self.board.cells[target.r][target.c]
@@ -143,10 +221,14 @@ class GameEngine:
                     DoorState.DOOR_STUCK: "The door is stuck!",
                 }
                 return StepResult(message=msgs.get(cell.door_state, ""))
-            return StepResult(message="You can't go there.")
+            return StepResult()
 
         self.player.pos = target
         self.turn_counter += 1
+
+        # Emit footstep noise from the new position.
+        noise_level: int = NOISE_RUN if running else NOISE_WALK
+        self.board.emit_noise(self.player.pos, noise_level)
 
         # Report items on the floor.
         sym = self.board.get_symbol(target)
@@ -158,6 +240,159 @@ class GameEngine:
             msg = f"There {verb} {gc} {noun} here."
 
         return StepResult(message=msg, turn_used=True)
+
+    # ------------------------------------------------------------------
+    # Combat
+    # ------------------------------------------------------------------
+
+    def _player_attacks_monster(self, monster: Monster) -> StepResult:
+        """Player bumps into a monster -- resolve melee combat.
+
+        Picks a random unarmed verb from UNARMED_VERBS to keep the
+        prose varied.  Killing blows use UNARMED_KILL_VERBS.  Melee
+        combat is loud and emits noise from the player's position.
+        """
+        result: CombatResult = _PLAYER_UNARMED.execute(
+            self.player, monster, self.rng
+        )
+        self.turn_counter += 1
+        self.board.emit_noise(self.player.pos, NOISE_MELEE)
+
+        reward: float = 0.5
+        if result.defender_killed:
+            # Record death in the species brain before removing.
+            brain = monster.species.get_brain()
+            if monster.last_action is not None:
+                brain.record_outcome(
+                    monster, monster.last_action, REWARD_DEATH, self
+                )
+            self.board.remove_monster(monster.pos)
+            kill_verb: str = self.rng.choice(UNARMED_KILL_VERBS)
+            msg: str = f"You {kill_verb} the {monster.name}!"
+            reward = 2.0
+        else:
+            verb: str = self.rng.choice(UNARMED_VERBS)
+            msg = f"You {verb} the {monster.name}. ({result.damage} damage)"
+
+        return StepResult(message=msg, reward=reward, turn_used=True)
+
+    def _monster_attacks_player(self, monster: Monster,
+                                action: Action) -> Optional[str]:
+        """A monster bumps into the player -- resolve melee combat."""
+        if not monster.species.attacks:
+            return None
+
+        attack: BumpAttack = monster.species.attacks[0]
+        result: CombatResult = attack.execute(monster, self.player, self.rng)
+
+        # Record damage reward in the species brain.
+        brain = monster.species.get_brain()
+        reward: float = result.damage * REWARD_DEAL_DAMAGE_SCALE
+        brain.record_outcome(monster, action, reward, self)
+
+        if result.defender_killed:
+            return f"The {monster.name} {attack.verb} you! You die..."
+        return f"The {monster.name} {attack.verb} you! ({result.damage} damage)"
+
+    # ------------------------------------------------------------------
+    # Monster turns (speed-based energy system)
+    # ------------------------------------------------------------------
+
+    def _run_monster_turns(self) -> list[str]:
+        """Accumulate energy and execute monster actions.
+
+        Each monster gains ``speed`` energy per tick.  When energy
+        reaches ``ENERGY_THRESHOLD``, the monster acts and energy is
+        decremented.  Faster creatures may act multiple times.
+        """
+        messages: list[str] = []
+        # Snapshot the list -- monsters may die during processing.
+        monsters: list[Monster] = self.board.get_all_monsters()
+
+        for monster in monsters:
+            if not monster.is_alive:
+                continue
+            if not self.player.is_alive:
+                break
+
+            monster.energy += monster.speed
+            while (monster.energy >= ENERGY_THRESHOLD
+                   and monster.is_alive
+                   and self.player.is_alive):
+                monster.energy -= ENERGY_THRESHOLD
+                msg: Optional[str] = self._execute_monster_turn(monster)
+                if msg:
+                    messages.append(msg)
+
+        return messages
+
+    def _execute_monster_turn(self, monster: Monster) -> Optional[str]:
+        """Execute a single turn for one monster."""
+        brain = monster.species.get_brain()
+        action, _kwargs = brain.choose_action(monster, self)
+        monster.last_action = action
+
+        if action in ACTION_TO_DIRECTION:
+            return self._monster_move(monster, action)
+
+        if action == Action.WAIT:
+            brain.record_outcome(monster, action, REWARD_WAIT, self)
+
+        return None
+
+    def _monster_move(self, monster: Monster,
+                      action: Action) -> Optional[str]:
+        """Resolve a monster's movement action (may trigger combat)."""
+        direction: Direction = ACTION_TO_DIRECTION[action]
+        dr, dc = DIRECTION_DELTA[direction]
+        target: Coordinate = Coordinate(
+            monster.pos.r + dr, monster.pos.c + dc
+        )
+        brain = monster.species.get_brain()
+
+        # Bounds check.
+        if not (0 <= target.r < BOARD_ROWS
+                and 0 <= target.c < BOARD_COLUMNS):
+            brain.record_outcome(monster, action, REWARD_FAILED_MOVE, self)
+            return None
+
+        # Bumping into the player triggers combat.
+        if target == self.player.pos:
+            return self._monster_attacks_player(monster, action)
+
+        # Move to navigable, unoccupied cell.
+        if (self.board.is_navigable(target)
+                and self.board.get_monster_at(target) is None):
+            # Shaping reward based on movement relative to prey.
+            can_see: bool = self.board.line_of_sight(
+                monster.pos, self.player.pos
+            )
+            if can_see:
+                old_dist: float = monster.pos.distance(self.player.pos)
+                new_dist: float = target.distance(self.player.pos)
+                reward: float = (REWARD_MOVE_TOWARD_PREY if new_dist < old_dist
+                                 else REWARD_MOVE_AWAY_PREY)
+            else:
+                reward = 0.0
+
+            self.board.move_monster(monster, target)
+
+            # Monsters emit noise from their new position.  The
+            # player's get_player_hear_messages picks this up and
+            # produces "You hear a soft padding of paws..." messages.
+            self.board.emit_noise(
+                monster.pos,
+                monster.species.move_noise,
+                description=monster.species.noise_description,
+                is_monster=True,
+            )
+
+            brain.record_outcome(monster, action, reward, self)
+            return None
+
+        # Blocked by terrain or another monster.
+        brain.record_outcome(monster, action, REWARD_FAILED_MOVE, self)
+        return None
 
     # ------------------------------------------------------------------
     # Stairs
@@ -173,6 +408,13 @@ class GameEngine:
         self.player.pos = Coordinate(
             self.board.upstairs.r, self.board.upstairs.c
         )
+        # Place monsters on first visit to this level.
+        level: int = self.current_board_index
+        if level not in self._monsters_placed:
+            self.board.place_monsters(
+                self.player.pos, level + 1
+            )
+            self._monsters_placed.add(level)
         return StepResult(message="You descend the staircase.",
                           turn_used=True)
 
@@ -233,6 +475,8 @@ class GameEngine:
             return StepResult(message="You don't have that.")
         self.board.add_goodie(self.player.pos, item)
         self.turn_counter += 1
+        # A dropped item thuds onto the floor — a soft but audible noise.
+        self.board.emit_noise(self.player.pos, NOISE_DROP)
         return StepResult(message=f"Dropped {item.item_name}.",
                           turn_used=True)
 
@@ -257,13 +501,18 @@ class GameEngine:
         return StepResult(message=msg, turn_used=turn_used)
 
     def _handle_kick(self, direction: Direction) -> StepResult:
-        """Kick a door to force it open."""
+        """Kick a door to force it open.
+
+        Kicking a door is the loudest action in the game — it rings
+        through the dungeon and alerts everything within earshot.
+        """
         if direction == Direction.NONE:
             return StepResult(message="Kick in what direction?")
         dr, dc = DIRECTION_DELTA[direction]
         target = Coordinate(self.player.pos.r + dr, self.player.pos.c + dc)
         msg = self.board.try_kick_door(target)
         self.turn_counter += 1
+        self.board.emit_noise(self.player.pos, NOISE_KICK)
         return StepResult(message=msg, turn_used=True)
 
     # ------------------------------------------------------------------
@@ -282,6 +531,7 @@ class GameEngine:
         """Return the full observable game state for an agent.
 
         This is the (state) part of the (state, action, reward) tuple.
+        Includes visible monsters for the current level.
         """
         return {
             "board": self.board.get_state(),

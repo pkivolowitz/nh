@@ -15,6 +15,10 @@ CLR_SPELLBOOKS: int = 5
 CLR_DOORS: int = 6
 CLR_MONSTER: int = 7
 
+# Per-species colors.  Brown = COLOR_YELLOW without A_BOLD on dark
+# backgrounds -- comfortable in a dark room (not too bright, not too dim).
+CLR_BROWN: int = 8
+
 
 def init_colors() -> None:
     """Register the game's color pairs.  Must be called after initscr."""
@@ -26,3 +30,4 @@ def init_colors() -> None:
     curses.init_pair(CLR_SPELLBOOKS, curses.COLOR_RED, -1)
     curses.init_pair(CLR_DOORS, curses.COLOR_YELLOW, -1)
     curses.init_pair(CLR_MONSTER, curses.COLOR_GREEN, -1)
+    curses.init_pair(CLR_BROWN, curses.COLOR_YELLOW, -1)
