@@ -14,7 +14,12 @@ __version__ = "0.1.0"
 # ---------------------------------------------------------------------------
 BOARD_COLUMNS: int = 80
 BOARD_ROWS: int = 21
-BOARD_TOP_OFFSET: int = 1
+# Row 0: identity line (name, role, race, alignment) + clock
+# Row 1: message line
+# Rows 2..2+BOARD_ROWS-1: dungeon board
+BOARD_IDENTITY_ROW: int = 0
+BOARD_MESSAGE_ROW: int = 1
+BOARD_TOP_OFFSET: int = 2
 BOARD_STATUS_OFFSET: int = BOARD_ROWS + BOARD_TOP_OFFSET
 
 # ---------------------------------------------------------------------------

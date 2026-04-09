@@ -19,8 +19,11 @@ from game.constants import (
     BOARD_ROWS,
     BOARD_TOP_OFFSET,
     BOARD_STATUS_OFFSET,
+    BOARD_IDENTITY_ROW,
+    BOARD_MESSAGE_ROW,
     MIN_TERMINAL_COLS,
     SIDEBAR_GAP,
+    MAX_INVENTORY_SLOTS,
     CH_HLINE, CH_VLINE,
     CH_ULCORNER, CH_URCORNER, CH_LLCORNER, CH_LRCORNER,
     CH_TTEE, CH_BTEE, CH_LTEE, CH_RTEE,
@@ -31,7 +34,7 @@ from game.constants import (
 from game.cell import CellBaseType, DoorState
 from game.coordinate import Coordinate
 from game.board import Board
-from game.player import Player
+from game.player import Player, Trait
 from game.items import index_to_letter
 from game.colors import (
     CLR_EMPTY, CLR_PLAYER, CLR_SPELLBOOKS, CLR_MONSTER,
@@ -122,11 +125,14 @@ class Renderer:
 
     def draw(self, board: Board, player: Player,
              current_level: int, turn: int) -> None:
-        """Render the complete frame: map, monsters, player, sidebar, status."""
+        """Render the complete frame: identity, map, monsters, player, status."""
         assert self.map_win is not None and self.sidebar_win is not None
         self._draw_board(board, player)
         self._draw_monsters(board, player)
         self._draw_player(player)
+        # Identity goes after _draw_board (which calls erase()) so it
+        # isn't wiped along with the previous frame.
+        self._draw_identity(player)
         self._draw_status(board, player, current_level)
         self._draw_time()
         self.map_win.noutrefresh()
@@ -135,25 +141,58 @@ class Renderer:
         curses.doupdate()
 
     # ------------------------------------------------------------------
-    # Info line (top of map window)
+    # Identity line (row 0) — name, role, race, alignment
+    # ------------------------------------------------------------------
+
+    def _draw_identity(self, player: Player) -> None:
+        """Render the player identity line at the top of the map window.
+
+        Format: "{name} the {role}, {race} {alignment}".  The clock is
+        drawn separately at the right edge of the same row.
+        """
+        win = self.map_win
+        if win is None:
+            return
+        win.move(BOARD_IDENTITY_ROW, 0)
+        win.clrtoeol()
+
+        identity: str = (
+            f"{player.name} the {player.role}, "
+            f"{player.race} {player.alignment}"
+        )
+        # Leave room on the right for the clock (9 chars: " HH:MM:SS").
+        identity = identity[:BOARD_COLUMNS - 10]
+
+        attr = curses.color_pair(CLR_PLAYER) | curses.A_BOLD
+        win.attron(attr)
+        try:
+            win.addstr(BOARD_IDENTITY_ROW, 0, identity)
+        except curses.error:
+            pass
+        win.attroff(attr)
+
+    # ------------------------------------------------------------------
+    # Message line (row 1)
     # ------------------------------------------------------------------
 
     def show_message(self, msg: str) -> None:
-        """Display a message on the info line at the top of the map."""
+        """Display a message on the message line just above the map."""
         if self.map_win is None or not msg:
             return
-        self.map_win.move(0, 0)
+        self.map_win.move(BOARD_MESSAGE_ROW, 0)
         self.map_win.clrtoeol()
-        self.map_win.addstr(0, 0, msg[:BOARD_COLUMNS - 9])
-        self._draw_time()
+        try:
+            self.map_win.addstr(BOARD_MESSAGE_ROW, 0,
+                                msg[:BOARD_COLUMNS - 1])
+        except curses.error:
+            pass
 
     def clear_info_line(self) -> None:
-        """Erase the info line and redraw the clock."""
+        """Erase the message line."""
         if self.map_win is None:
             return
-        self.map_win.move(0, 0)
+        self.map_win.move(BOARD_MESSAGE_ROW, 0)
         self.map_win.clrtoeol()
-        self._draw_time()
 
     # ------------------------------------------------------------------
     # Board rendering
@@ -314,25 +353,92 @@ class Renderer:
     # Status lines
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _fmt_stat_col(label: str, cur: int, mx: int,
+                      label_w: int, num_w: int) -> str:
+        """Format ``LABEL:CUR/MAX`` with strict fixed-width fields.
+
+        ``label`` is right-aligned within ``label_w`` chars and the
+        numeric values are right-aligned within ``num_w`` chars each.
+        Two columns built with the same widths line up exactly.
+        """
+        return f"{label:>{label_w}}:{cur:>{num_w}d}/{mx:>{num_w}d}"
+
     def _draw_status(self, board: Board, player: Player,
                      current_level: int) -> None:
-        """Render the two status lines below the map."""
+        """Render the two status rows below the map.
+
+        Layout: 5 strict-aligned columns on each row.
+
+        Row 1 (volatile / game state):
+            HLTH:cur/max  CNC:cur/max  LVL:cur/max  EXP:current   Dlvl:N
+        Row 2 (attributes / inventory):
+            INT:cur/max   CON:cur/max  DEX:cur/max  Items:N/52    Wt:N
+
+        Both rows use identical column widths so the labels and values
+        line up exactly underneath each other.
+        """
         win = self.map_win
         assert win is not None
         attr = curses.color_pair(CLR_EMPTY)
+
+        cur = player.current_traits
+        mx = player.maximum_traits
+
+        # Column widths chosen so labels right-align and values fit
+        # the largest expected magnitude.  Both rows must use the
+        # same width per column to keep strict alignment.
+        # Col 1-3: 4-char label + ":" + 3-digit cur + "/" + 3-digit max = 12
+        c1_top: str = self._fmt_stat_col(
+            "HLTH", cur[Trait.HEALTH], mx[Trait.HEALTH], 4, 3
+        )
+        c1_bot: str = self._fmt_stat_col(
+            "INT", cur[Trait.INTELLIGENCE], mx[Trait.INTELLIGENCE], 4, 3
+        )
+
+        c2_top: str = self._fmt_stat_col(
+            "CNC", cur[Trait.CONCENTRATION], mx[Trait.CONCENTRATION], 4, 3
+        )
+        c2_bot: str = self._fmt_stat_col(
+            "CON", cur[Trait.CONSTITUTION], mx[Trait.CONSTITUTION], 4, 3
+        )
+
+        c3_top: str = self._fmt_stat_col(
+            "LVL", cur[Trait.LEVEL], mx[Trait.LEVEL], 4, 3
+        )
+        c3_bot: str = self._fmt_stat_col(
+            "DEX", cur[Trait.DEXTERITY], mx[Trait.DEXTERITY], 4, 3
+        )
+
+        # Col 4: 4-char label + ":" + 6-digit value(s) -- top row shows
+        # current EXP only (no max).  Both cells are 11 chars wide.
+        c4_top: str = f"{'EXP':>4}:{cur[Trait.EXPERIENCE]:>6d}"
+        c4_bot: str = f"Items:{player.inventory_count():>2d}/{MAX_INVENTORY_SLOTS:>2d}"
+
+        # Col 5: dungeon level / total inventory weight.  9 chars wide.
+        c5_top: str = f"Dlvl:{current_level:>4d}"
+        c5_bot: str = f"  Wt:{player.weight_of_inventory():>4d}"
+
+        sep: str = "  "
+        row_top: str = sep.join([c1_top, c2_top, c3_top, c4_top, c5_top])
+        row_bot: str = sep.join([c1_bot, c2_bot, c3_bot, c4_bot, c5_bot])
+
         win.attron(attr)
-        win.addstr(BOARD_STATUS_OFFSET, 0, player.status_line_upper())
-        win.addstr(BOARD_STATUS_OFFSET + 1, 0, player.status_line_lower())
+        try:
+            win.addstr(BOARD_STATUS_OFFSET, 0, row_top)
+            win.addstr(BOARD_STATUS_OFFSET + 1, 0, row_bot)
+        except curses.error:
+            pass
         win.attroff(attr)
 
     def _draw_time(self) -> None:
-        """Draw the wall-clock time in the upper-right corner."""
+        """Draw the wall-clock time at the right edge of the identity row."""
         win = self.map_win
         if win is None:
             return
         ts = time.strftime("%H:%M:%S")
         try:
-            win.addstr(0, BOARD_COLUMNS - 8, ts)
+            win.addstr(BOARD_IDENTITY_ROW, BOARD_COLUMNS - 8, ts)
         except curses.error:
             pass
 
@@ -352,7 +458,11 @@ class Renderer:
     # ------------------------------------------------------------------
 
     def _draw_sidebar(self, player: Player, current_level: int) -> None:
-        """Render inventory and dungeon level in the sidebar."""
+        """Render the inventory list in the sidebar.
+
+        Wt, Items, and Dlvl now appear in the bottom status rows of
+        the main map, so the sidebar is just the inventory listing.
+        """
         win = self.sidebar_win
         assert win is not None
         win.erase()
@@ -368,7 +478,7 @@ class Renderer:
         max_rows = self.sidebar_rows
         max_cols = self.sidebar_cols
         for i in range(len(player.inventory)):
-            if row >= max_rows - 4:
+            if row >= max_rows - 1:
                 break
             item = player.inventory[i]
             if item is None:
@@ -388,7 +498,7 @@ class Renderer:
             win.attroff(item_attr)
             row += 1
 
-            if self.detail_mode and row < max_rows - 4:
+            if self.detail_mode and row < max_rows - 1:
                 detail = f"    Wt:{item.weight()}"
                 names = {1: "Potion", 2: "Scroll", 3: "Spellbook"}
                 extra = names.get(int(item.type), "")
@@ -398,12 +508,6 @@ class Renderer:
                     detail = detail[: max_cols - 2]
                 win.addstr(row, 1, detail)
                 row += 1
-
-        # Summary block.
-        win.addstr(max_rows - 3, 1, f"Wt:{player.weight_of_inventory()}")
-        win.addstr(max_rows - 2, 1,
-                   f"Items:{player.inventory_count()}/{len(player.inventory)}")
-        win.addstr(max_rows - 1, 1, f"Dlvl:{current_level}")
 
     # ------------------------------------------------------------------
     # Input helpers

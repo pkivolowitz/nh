@@ -127,45 +127,6 @@ class Player(Creature):
         """Number of occupied inventory slots."""
         return sum(1 for it in self.inventory if it is not None)
 
-    # -- status lines --------------------------------------------------
-
-    @staticmethod
-    def _fmt_stat(label: str, cur: int, mx: int, w: int) -> str:
-        """Format a stat as ``LABEL:CUR/MAX`` with right-justified numbers."""
-        return f"{label}:{cur:>{w}}/{mx:>{w}}"
-
-    def status_line_upper(self) -> str:
-        """Name, role, and volatile stats."""
-        title = f"{self.name} the {self.role}"
-        parts = [
-            f"{title:<20s}",
-            self._fmt_stat("HLTH", self.current_traits[Trait.HEALTH],
-                           self.maximum_traits[Trait.HEALTH], 3),
-            self._fmt_stat("CNC", self.current_traits[Trait.CONCENTRATION],
-                           self.maximum_traits[Trait.CONCENTRATION], 3),
-            self._fmt_stat("LVL", self.current_traits[Trait.LEVEL],
-                           self.maximum_traits[Trait.LEVEL], 2),
-            self._fmt_stat("EXP", self.current_traits[Trait.EXPERIENCE],
-                           self.maximum_traits[Trait.EXPERIENCE], 6),
-        ]
-        return "  ".join(parts)
-
-    def status_line_lower(self) -> str:
-        """Race, alignment, and stat blocks."""
-        desc = f"{self.race} {self.alignment}"
-        parts = [
-            f"{desc:<20s}",
-            self._fmt_stat("INT", self.current_traits[Trait.INTELLIGENCE],
-                           self.maximum_traits[Trait.INTELLIGENCE], 3),
-            self._fmt_stat("CON", self.current_traits[Trait.CONSTITUTION],
-                           self.maximum_traits[Trait.CONSTITUTION], 3),
-            self._fmt_stat("DEX", self.current_traits[Trait.DEXTERITY],
-                           self.maximum_traits[Trait.DEXTERITY], 3),
-            f"Items:{self.inventory_count():2d}/{MAX_INVENTORY_SLOTS}",
-            f"Wt:{self.weight_of_inventory()}",
-        ]
-        return "  ".join(parts)
-
     # -- ML state ------------------------------------------------------
 
     def get_state(self) -> dict:
