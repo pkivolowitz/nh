@@ -33,9 +33,15 @@ from game.constants import (
     NOISE_WALL_ATTENUATION,
     NOISE_FAINT_THRESHOLD,
     NOISE_LOUD_THRESHOLD,
+    STUCK_DOOR_MIN_KICKS,
+    STUCK_DOOR_MAX_KICKS,
 )
 from game.cell import Cell, CellBaseType, DoorState
 from game.coordinate import Coordinate
+from game.effects import (
+    TileEffect, EffectType,
+    FIRE_DURATION, SCORCH_DURATION, FIRE_DAMAGE_PER_TURN,
+)
 from game.room import Room
 from game.items import BaseItem, Spellbook
 from game.drawing_support import corner_map
@@ -95,8 +101,9 @@ class Board:
     corners, doors, stairs, and floor items.
     """
 
-    def __init__(self, rng: random.Random) -> None:
+    def __init__(self, rng: random.Random, level: int = 1) -> None:
         self.rng: random.Random = rng
+        self.level: int = level
         self.cells: list[list[Cell]] = [
             [Cell() for _ in range(BOARD_COLUMNS)]
             for _ in range(BOARD_ROWS)
@@ -106,6 +113,7 @@ class Board:
         self.monsters: dict[Coordinate, Monster] = {}
         self.torches: list[Coordinate] = []
         self.noise_sources: list[NoiseEvent] = []
+        self.effects: dict[Coordinate, TileEffect] = {}
         self.upstairs: Coordinate = Coordinate()
         self.downstairs: Coordinate = Coordinate()
         self._create()
@@ -353,6 +361,82 @@ class Board:
         return messages
 
     # ------------------------------------------------------------------
+    # Ephemeral tile effects
+    # ------------------------------------------------------------------
+
+    def add_fire(self, pos: Coordinate) -> None:
+        """Place a fire effect at *pos*.
+
+        If the cell contains a closed/stuck/locked door, the fire
+        burns it open.  Fire replaces any existing effect at this cell.
+        """
+        cell = self.cells[pos.r][pos.c]
+        # Fire burns doors open.
+        if (cell.base_type == CellBaseType.DOOR
+                and cell.door_state in (DoorState.DOOR_CLOSED,
+                                        DoorState.DOOR_STUCK,
+                                        DoorState.DOOR_LOCKED)):
+            cell.door_state = DoorState.DOOR_OPEN
+            self._update_door_display(pos.r, pos.c)
+        self.effects[pos] = TileEffect(
+            EffectType.FIRE, pos, FIRE_DURATION, FIRE_DAMAGE_PER_TURN
+        )
+
+    def tick_effects(self) -> list[str]:
+        """Advance all effects by one turn.
+
+        Returns messages about environmental interactions (e.g.
+        monsters burning).  Expired fire effects leave scorch marks.
+        """
+        messages: list[str] = []
+        expired: list[Coordinate] = []
+        replacements: list[TileEffect] = []
+
+        for pos, effect in self.effects.items():
+            # Damage monsters standing in fire.
+            if effect.effect_type == EffectType.FIRE and effect.damage_per_turn > 0:
+                monster = self.get_monster_at(pos)
+                if monster is not None and monster.is_alive:
+                    monster.take_damage(effect.damage_per_turn)
+                    if not monster.is_alive:
+                        from game.brain import REWARD_DEATH
+                        brain = monster.species.get_brain()
+                        if monster.last_action is not None:
+                            brain.record_outcome(
+                                monster, monster.last_action, REWARD_DEATH,
+                                None  # No engine ref needed for death recording.
+                            )
+                        self.remove_monster(pos)
+                        messages.append(
+                            f"The {monster.name} burns to death in the flames!"
+                        )
+                    else:
+                        messages.append(
+                            f"The {monster.name} burns in the flames!"
+                        )
+
+            effect.tick()
+            if effect.is_expired:
+                expired.append(pos)
+                # Fire leaves scorch marks.
+                if effect.effect_type == EffectType.FIRE:
+                    replacements.append(TileEffect(
+                        EffectType.SCORCH, pos, SCORCH_DURATION
+                    ))
+
+        # Remove expired, add replacements.
+        for pos in expired:
+            del self.effects[pos]
+        for eff in replacements:
+            self.effects[eff.pos] = eff
+
+        return messages
+
+    def get_effect_at(self, pos: Coordinate) -> TileEffect | None:
+        """Return the active effect at *pos*, or None."""
+        return self.effects.get(pos)
+
+    # ------------------------------------------------------------------
     # Monster spawning (called by engine after player placement)
     # ------------------------------------------------------------------
 
@@ -424,67 +508,145 @@ class Board:
     # Door interaction
     # ------------------------------------------------------------------
 
-    def try_open_door(self, c: Coordinate) -> str:
-        """Attempt to open the door at *c*.  Returns a message string."""
+    # Atmospheric descriptions for door sounds — picked at random to
+    # keep repeated opens from feeling mechanical.  Each tuple is
+    # (player message fragment, noise description heard from afar).
+    _DOOR_OPEN_FLAVOR: list[tuple[str, str]] = [
+        ("A rusty hinge protests as you pull it open.",
+         "the protest of a rusty hinge"),
+        ("The door groans open on old hinges.",
+         "the groan of old wood"),
+        ("Hinges shriek as the door swings wide.",
+         "a shriek of metal on metal"),
+        ("The door creaks open reluctantly.",
+         "a reluctant creak of hinges"),
+        ("You ease the door open; the hinges whine softly.",
+         "the soft whine of hinges"),
+    ]
+
+    _DOOR_CLOSE_FLAVOR: list[tuple[str, str]] = [
+        ("The door thuds shut.",
+         "the thud of a closing door"),
+        ("You pull the door closed; the latch clicks.",
+         "the click of a door latch"),
+        ("The door settles into its frame with a dull boom.",
+         "a dull boom from somewhere"),
+    ]
+
+    # Escalating messages as a stuck door weakens under repeated kicks.
+    _STUCK_KICK_PROGRESS: list[str] = [
+        "The door shudders but holds.",
+        "The hinges groan under the impact — something gives a little.",
+        "Wood splinters at the frame. One more ought to do it.",
+        "The door buckles, barely clinging to its hinges.",
+    ]
+
+    _STUCK_BREAK_FLAVOR: list[tuple[str, str]] = [
+        ("The door bursts inward with a splintering crash!",
+         "the crack of splintering wood"),
+        ("The frame gives way and the door flies open!",
+         "a thunderous crack of breaking timber"),
+        ("With a final kick the door tears free of its hinges!",
+         "the shriek of hinges tearing loose"),
+    ]
+
+    def try_open_door(self, c: Coordinate) -> tuple[str, str, int]:
+        """Attempt to open the door at *c*.
+
+        Returns (player_message, noise_description, noise_level).
+        noise_level == 0 means no noise should be emitted.
+        """
         if not (0 <= c.r < BOARD_ROWS and 0 <= c.c < BOARD_COLUMNS):
-            return "There is nothing there to open."
+            return "There is nothing there to open.", "", 0
         cell = self.cells[c.r][c.c]
         if cell.base_type != CellBaseType.DOOR:
-            return "There is nothing there to open."
+            return "There is nothing there to open.", "", 0
         if cell.door_state in (DoorState.DOOR_OPEN, DoorState.DOOR_MISSING):
-            return "This door is already open."
+            return "This door is already open.", "", 0
         if cell.door_state == DoorState.DOOR_LOCKED:
-            return "This door is locked."
+            return "This door is locked.", "", 0
         if cell.door_state == DoorState.DOOR_STUCK:
-            return "The door is stuck!"
+            return "The door is stuck!", "", 0
         if cell.door_state == DoorState.DOOR_CLOSED:
             cell.door_state = DoorState.DOOR_OPEN
             self._update_door_display(c.r, c.c)
-            return "You open the door."
-        return ""
+            flavor, noise_desc = self.rng.choice(self._DOOR_OPEN_FLAVOR)
+            from game.constants import NOISE_DOOR_OPEN
+            return flavor, noise_desc, NOISE_DOOR_OPEN
+        return "", "", 0
 
-    def try_kick_door(self, c: Coordinate) -> str:
-        """Kick the door at *c*.  Can force stuck and locked doors.
+    def try_close_door_ext(self, c: Coordinate) -> tuple[str, str, int]:
+        """Attempt to close the door at *c*.
 
-        Returns a message string.  Success is probabilistic.
+        Returns (player_message, noise_description, noise_level).
         """
         if not (0 <= c.r < BOARD_ROWS and 0 <= c.c < BOARD_COLUMNS):
-            return "You kick at nothing."
+            return "There is nothing there to close.", "", 0
         cell = self.cells[c.r][c.c]
         if cell.base_type != CellBaseType.DOOR:
-            return "You kick at nothing."
-        if cell.door_state in (DoorState.DOOR_OPEN, DoorState.DOOR_MISSING):
-            return "That door is already open."
-        # Kick chances: stuck 40%, locked 25%, closed 80%.
-        chances = {
-            DoorState.DOOR_STUCK: 40,
-            DoorState.DOOR_LOCKED: 25,
-            DoorState.DOOR_CLOSED: 80,
-        }
-        chance = chances.get(cell.door_state, 0)
-        if self.rng.randint(1, 100) <= chance:
-            cell.door_state = DoorState.DOOR_OPEN
-            self._update_door_display(c.r, c.c)
-            return "You kick the door open!"
-        return "The door resists."
-
-    def try_close_door(self, c: Coordinate) -> str:
-        """Attempt to close the door at *c*.  Returns a message string."""
-        if not (0 <= c.r < BOARD_ROWS and 0 <= c.c < BOARD_COLUMNS):
-            return "There is nothing there to close."
-        cell = self.cells[c.r][c.c]
-        if cell.base_type != CellBaseType.DOOR:
-            return "There is nothing there to close."
+            return "There is nothing there to close.", "", 0
         if cell.door_state in (DoorState.DOOR_CLOSED, DoorState.DOOR_LOCKED,
                                DoorState.DOOR_STUCK):
-            return "This door is already closed."
+            return "This door is already closed.", "", 0
         if cell.door_state == DoorState.DOOR_MISSING:
-            return "There is no door there to close."
+            return "There is no door there to close.", "", 0
         if cell.door_state == DoorState.DOOR_OPEN:
             cell.door_state = DoorState.DOOR_CLOSED
             self._update_door_display(c.r, c.c)
-            return "You close the door."
-        return ""
+            flavor, noise_desc = self.rng.choice(self._DOOR_CLOSE_FLAVOR)
+            from game.constants import NOISE_DOOR_CLOSE
+            return flavor, noise_desc, NOISE_DOOR_CLOSE
+        return "", "", 0
+
+    def try_kick_door(self, c: Coordinate) -> tuple[str, str, int]:
+        """Kick the door at *c*.  Can force stuck and locked doors.
+
+        Stuck doors track remaining kicks and yield with escalating
+        drama.  Returns (player_message, noise_description, noise_level).
+        """
+        from game.constants import NOISE_KICK, NOISE_DOOR_BREAK
+        if not (0 <= c.r < BOARD_ROWS and 0 <= c.c < BOARD_COLUMNS):
+            return "You kick at nothing.", "", 0
+        cell = self.cells[c.r][c.c]
+        if cell.base_type != CellBaseType.DOOR:
+            return "You kick at nothing.", "", 0
+        if cell.door_state in (DoorState.DOOR_OPEN, DoorState.DOOR_MISSING):
+            return "That door is already open.", "", 0
+
+        # Stuck doors use the deterministic kick counter.
+        if cell.door_state == DoorState.DOOR_STUCK:
+            cell.door_kicks_remaining -= 1
+            if cell.door_kicks_remaining <= 0:
+                cell.door_state = DoorState.DOOR_OPEN
+                self._update_door_display(c.r, c.c)
+                flavor, noise_desc = self.rng.choice(self._STUCK_BREAK_FLAVOR)
+                return flavor, noise_desc, NOISE_DOOR_BREAK
+            # Pick a progress message based on how close the door is to breaking.
+            idx = min(len(self._STUCK_KICK_PROGRESS) - 1,
+                      STUCK_DOOR_MAX_KICKS - cell.door_kicks_remaining - 1)
+            return self._STUCK_KICK_PROGRESS[idx], "a heavy impact on wood", NOISE_KICK
+
+        # Locked doors: probabilistic (no counter).
+        if cell.door_state == DoorState.DOOR_LOCKED:
+            if self.rng.randint(1, 100) <= 25:
+                cell.door_state = DoorState.DOOR_OPEN
+                self._update_door_display(c.r, c.c)
+                return ("The lock snaps and the door swings open!",
+                        "the snap of a breaking lock", NOISE_DOOR_BREAK)
+            return ("The lock holds against the blow.",
+                    "a heavy impact on wood", NOISE_KICK)
+
+        # Closed doors: easy to kick open.
+        if cell.door_state == DoorState.DOOR_CLOSED:
+            if self.rng.randint(1, 100) <= 80:
+                cell.door_state = DoorState.DOOR_OPEN
+                self._update_door_display(c.r, c.c)
+                flavor, noise_desc = self.rng.choice(self._STUCK_BREAK_FLAVOR)
+                return flavor, noise_desc, NOISE_DOOR_BREAK
+            return ("The door rattles but stays shut.",
+                    "a heavy impact on wood", NOISE_KICK)
+
+        return "The door resists.", "", 0
 
     # ------------------------------------------------------------------
     # Visibility (curses-free)
@@ -600,7 +762,7 @@ class Board:
         self._flatten_rooms()
         self._place_torches()
         self._place_stairs()
-        self._place_goodies()
+        self._place_goodies(guarantee_fire=(self.level == 1))
 
     # -- room fill / enclose -------------------------------------------
 
@@ -855,6 +1017,10 @@ class Board:
                     cell.door_state = DoorState.DOOR_CLOSED
                 elif roll <= 90:
                     cell.door_state = DoorState.DOOR_STUCK
+                    # Stuck doors yield after a random number of kicks.
+                    cell.door_kicks_remaining = self.rng.randint(
+                        STUCK_DOOR_MIN_KICKS, STUCK_DOOR_MAX_KICKS
+                    )
                 else:
                     cell.door_state = DoorState.DOOR_LOCKED
 
@@ -1053,10 +1219,27 @@ class Board:
 
     # -- goodies -------------------------------------------------------
 
-    def _place_goodies(self) -> None:
-        """Seed each room with a sample item at its centroid."""
+    # Percent chance a room contains a spellbook.  Spellbooks are
+    # uncommon — finding one is a meaningful event.
+    SPELLBOOK_ROOM_CHANCE: int = 15
+
+    def _place_goodies(self, guarantee_fire: bool = False) -> None:
+        """Seed rooms with items.  Spellbooks are rare.
+
+        When *guarantee_fire* is True (level 1), at least one room
+        gets a fire spellbook so the player can learn magic early.
+        """
+        from game.magic import MagicSchool
+        schools: list[MagicSchool] = list(MagicSchool)
+        placed_fire: bool = False
         for rm in self.rooms:
             c = rm.get_centroid()
             if self.is_a_stairway(c):
                 continue
-            self.add_goodie(c, Spellbook())
+            if not placed_fire and guarantee_fire:
+                self.add_goodie(c, Spellbook(MagicSchool.FIRE))
+                placed_fire = True
+                continue
+            if self.rng.randint(1, 100) <= self.SPELLBOOK_ROOM_CHANCE:
+                school: MagicSchool = self.rng.choice(schools)
+                self.add_goodie(c, Spellbook(school))

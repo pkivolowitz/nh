@@ -25,6 +25,7 @@ from game.actions import (
     Action, Direction,
     VI_KEY_TO_DIRECTION, DIRECTION_TO_ACTION,
 )
+from game.magic import SCHOOL_HOTKEYS, SCHOOL_NAMES, MagicSchool
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,15 +112,15 @@ def _main(stdscr: curses.window) -> None:
     config = GameConfig()
     config.load()
 
-    # Build engine.
-    seed = args.seed if args.seed is not None else int(time.time())
-    engine = GameEngine(seed=seed)
-
-    # Apply config / CLI overrides.
-    engine.player.name = args.name if args.name else config.name
-    engine.player.role = config.role
-    engine.player.race = config.race
-    engine.player.alignment = config.alignment
+    # Try to restore a saved game; fall back to a fresh one.
+    engine: GameEngine | None = GameEngine.load()
+    if engine is None:
+        seed = args.seed if args.seed is not None else int(time.time())
+        engine = GameEngine(seed=seed)
+        engine.player.name = args.name if args.name else config.name
+        engine.player.role = config.role
+        engine.player.race = config.race
+        engine.player.alignment = config.alignment
 
     # Set up renderer.
     renderer = Renderer()
@@ -182,6 +183,13 @@ def _main(stdscr: curses.window) -> None:
         if c == ord("q"):
             break
 
+        # Freeze — save state and exit immediately so the player
+        # can come back to this exact moment and report what they see.
+        if c == 19:  # Ctrl+S
+            BrainRegistry.save_all()
+            engine.save()
+            break
+
         # Any real keypress clears the previous message.
         last_message = ""
 
@@ -192,6 +200,11 @@ def _main(stdscr: curses.window) -> None:
         if digit_acc:
             numeric_qualifier = int(digit_acc)
             digit_acc = ""
+
+        # Help.
+        if c == ord("?") or c == 127:
+            renderer.show_help()
+            continue
 
         # Toggle debug view.
         if c == ord("t"):
@@ -312,10 +325,87 @@ def _main(stdscr: curses.window) -> None:
                     last_message = "Invalid direction."
             continue
 
+        # Kick (Ctrl+K).
+        if c == 11:
+            renderer.show_message("Kick in what direction? ")
+            dir_ch = renderer.getch_blocking()
+            if dir_ch == 27:
+                renderer.clear_info_line()
+            else:
+                dir_key = chr(dir_ch) if 0 <= dir_ch < 256 else ""
+                if dir_key.lower() in VI_KEY_TO_DIRECTION:
+                    direction = VI_KEY_TO_DIRECTION[dir_key.lower()]
+                    result = engine.step(Action.KICK_DOOR,
+                                         direction=direction)
+                    last_message = result.message
+                else:
+                    last_message = "Invalid direction."
+            continue
+
+        # Cast spell (z).
+        if c == ord("z"):
+            known = engine.player.magic.known_schools()
+            if not known:
+                last_message = "You don't know any magic."
+                continue
+            # Build the school selection prompt.
+            opts: list[str] = []
+            for hotkey, school_enum in SCHOOL_HOTKEYS.items():
+                if school_enum in known:
+                    opts.append(f"{hotkey}={SCHOOL_NAMES[school_enum]}")
+            prompt: str = "Cast which school? [" + ", ".join(opts) + "] "
+            renderer.show_message(prompt)
+            sch_ch = renderer.getch_blocking()
+            if sch_ch == 27:
+                renderer.clear_info_line()
+                continue
+            sch_key = chr(sch_ch).lower() if 0 <= sch_ch < 256 else ""
+            if sch_key not in SCHOOL_HOTKEYS or SCHOOL_HOTKEYS[sch_key] not in known:
+                last_message = "You don't know that school."
+                continue
+            chosen_school: MagicSchool = SCHOOL_HOTKEYS[sch_key]
+            # Ask for direction.
+            renderer.show_message(f"Cast {SCHOOL_NAMES[chosen_school]} in what direction? ")
+            dir_ch = renderer.getch_blocking()
+            if dir_ch == 27:
+                renderer.clear_info_line()
+                continue
+            dir_key = chr(dir_ch) if 0 <= dir_ch < 256 else ""
+            if dir_key.lower() in VI_KEY_TO_DIRECTION:
+                direction = VI_KEY_TO_DIRECTION[dir_key.lower()]
+            else:
+                direction = Direction.NONE
+            result = engine.step(Action.CAST,
+                                 school=chosen_school,
+                                 direction=direction)
+            last_message = result.message
+            continue
+
+        # Read (r) — read a spellbook from inventory.
+        if c == ord("r"):
+            if engine.player.inventory_count() == 0:
+                last_message = "You have nothing to read."
+                continue
+            renderer.show_message("Read which item? ")
+            letter_ch = renderer.getch_blocking()
+            if letter_ch == 27:
+                renderer.clear_info_line()
+            else:
+                result = engine.step(Action.READ,
+                                     letter=chr(letter_ch))
+                last_message = result.message
+            continue
+
         numeric_qualifier = 0
 
     # Persist all brain state learned during this session.
     BrainRegistry.save_all()
+
+    # Save game on quit; delete save on death (permadeath).
+    if engine.player.is_alive:
+        engine.save()
+    else:
+        GameEngine.delete_save()
 
 
 def main() -> None:

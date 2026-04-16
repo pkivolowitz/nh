@@ -64,6 +64,8 @@ REWARD_MOVE_AWAY_PREY: float = -0.05
 REWARD_FAILED_MOVE: float = -0.1
 REWARD_WAIT: float = -0.05
 REWARD_DEATH: float = -5.0
+REWARD_FIRE_NEAR: float = -2.0      # Survived a fire blast — teaches avoidance
+REWARD_FIRE_DAMAGE: float = -3.0    # Took fire damage but lived — stronger signal
 
 # Exploration rate bounds.  Starts high (try everything), decays toward
 # a floor as the species accumulates experience across games.

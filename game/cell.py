@@ -50,6 +50,7 @@ class Cell:
         "lit",
         "door_state",
         "door_horizontal",
+        "door_kicks_remaining",
     )
 
     def __init__(self) -> None:
@@ -63,3 +64,4 @@ class Cell:
         self.lit: bool = False
         self.door_state: DoorState = DoorState.DOOR_NONE
         self.door_horizontal: bool = False
+        self.door_kicks_remaining: int = 0

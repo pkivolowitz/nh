@@ -14,6 +14,8 @@ from __future__ import annotations
 
 __version__ = "0.2.0"
 
+import os
+import pickle
 import random
 from typing import Optional
 
@@ -31,11 +33,22 @@ from game.constants import (
     NOISE_DROP,
     NOISE_KICK,
     NOISE_MELEE,
+    HEAL_BASE_INTERVAL,
+    HEAL_CON_SCALE,
+    KICK_NOTHING_HURT_CHANCE,
+    KICK_NOTHING_DICE,
+    KICK_NOTHING_SIDES,
 )
 from game.cell import CellBaseType, DoorState
 from game.coordinate import Coordinate
 from game.board import Board
-from game.player import Player
+from game.player import Player, Trait
+from game.magic import (
+    MagicSchool, SchoolState, CastResult, CastOutcome,
+    SCHOOL_NAMES, SCHOOL_CAST_VERBS, LOW_CONC_MESSAGES,
+    CONC_BASE_INTERVAL, CONC_INT_SCALE,
+    roll_outcome,
+)
 from game.actions import (
     Action, Direction, DIRECTION_DELTA, ACTION_TO_DIRECTION,
 )
@@ -92,6 +105,8 @@ class GameEngine:
         self.turn_counter: int = 0
         self.player: Player = Player(self.rng)
         self._monsters_placed: set[int] = set()
+        self._last_heal_turn: int = 0
+        self._last_conc_turn: int = 0
 
         # Generate the first level.
         self._new_board()
@@ -117,7 +132,8 @@ class GameEngine:
     def step(self, action: Action, *,
              direction: Direction = Direction.NONE,
              letter: str = "",
-             running: bool = False) -> StepResult:
+             running: bool = False,
+             school: Optional[MagicSchool] = None) -> StepResult:
         """Execute *action* and return the result.
 
         After the player acts, all monsters on the level accumulate
@@ -125,6 +141,7 @@ class GameEngine:
 
         ``running`` is True when the player is in a run (uppercase
         vi-key movement); it selects the louder NOISE_RUN emission.
+        ``school`` is required for CAST actions.
         """
         # Clear stale noise from the previous step — every turn
         # starts with a clean noise slate.
@@ -151,6 +168,10 @@ class GameEngine:
             result = self._handle_door(direction, opening=False)
         elif action == Action.KICK_DOOR:
             result = self._handle_kick(direction)
+        elif action == Action.CAST:
+            result = self._handle_cast(school, direction)
+        elif action == Action.READ:
+            result = self._handle_read(letter)
         else:
             result = StepResult(message="Unknown action.")
 
@@ -165,6 +186,28 @@ class GameEngine:
                     combined += mm
                 result.message = combined
 
+        # Tick ephemeral tile effects (fire burns, scorch fades).
+        if result.turn_used:
+            effect_msgs: list[str] = self.board.tick_effects()
+            for em in effect_msgs:
+                if result.message:
+                    result.message += " " + em
+                else:
+                    result.message = em
+            # Player standing in fire takes damage.
+            if self.player.is_alive:
+                from game.effects import EffectType
+                player_effect = self.board.get_effect_at(self.player.pos)
+                if (player_effect is not None
+                        and player_effect.effect_type == EffectType.FIRE
+                        and player_effect.damage_per_turn > 0):
+                    self.player.take_damage(player_effect.damage_per_turn)
+                    fire_msg: str = "The flames sear your flesh!"
+                    if result.message:
+                        result.message += " " + fire_msg
+                    else:
+                        result.message = fire_msg
+
         # Build hear messages for any monster noises the player can
         # perceive but not see directly.
         if self.player.is_alive:
@@ -176,6 +219,11 @@ class GameEngine:
                     result.message += " " + hm
                 else:
                     result.message = hm
+
+        # Natural healing and concentration regen — slow recovery each turn.
+        if result.turn_used and self.player.is_alive:
+            self._try_natural_heal()
+            self._try_conc_regen()
 
         # Check for player death (monsters may have killed the player).
         if not self.player.is_alive:
@@ -486,34 +534,232 @@ class GameEngine:
 
     def _handle_door(self, direction: Direction,
                      opening: bool) -> StepResult:
+        """Open or close a door.
+
+        Opening a door creaks; closing thuds.  Both emit noise that
+        draws nearby monsters — choose your moment carefully.
+        """
         if direction == Direction.NONE:
             verb = "Open" if opening else "Close"
             return StepResult(message=f"{verb} in what direction?")
         dr, dc = DIRECTION_DELTA[direction]
         target = Coordinate(self.player.pos.r + dr, self.player.pos.c + dc)
         if opening:
-            msg = self.board.try_open_door(target)
+            msg, noise_desc, noise_level = self.board.try_open_door(target)
         else:
-            msg = self.board.try_close_door(target)
-        turn_used = msg.startswith("You ")
+            msg, noise_desc, noise_level = self.board.try_close_door_ext(target)
+        # A turn is used if the action actually did something (flavor
+        # messages always begin with a capital letter and aren't "There"
+        # or "This" — but the reliable signal is whether noise was made).
+        turn_used: bool = noise_level > 0
         if turn_used:
             self.turn_counter += 1
+            self.board.emit_noise(
+                target, noise_level,
+                description=noise_desc, is_monster=False,
+            )
         return StepResult(message=msg, turn_used=turn_used)
 
     def _handle_kick(self, direction: Direction) -> StepResult:
         """Kick a door to force it open.
 
-        Kicking a door is the loudest action in the game — it rings
-        through the dungeon and alerts everything within earshot.
+        Kicking reverberates through stone corridors — everything in
+        earshot hears it.  Stuck doors weaken with each blow.
+        Kicking at nothing risks pulling a muscle.
         """
         if direction == Direction.NONE:
             return StepResult(message="Kick in what direction?")
         dr, dc = DIRECTION_DELTA[direction]
         target = Coordinate(self.player.pos.r + dr, self.player.pos.c + dc)
-        msg = self.board.try_kick_door(target)
+        msg, noise_desc, noise_level = self.board.try_kick_door(target)
         self.turn_counter += 1
-        self.board.emit_noise(self.player.pos, NOISE_KICK)
+        if noise_level > 0:
+            self.board.emit_noise(
+                target, noise_level,
+                description=noise_desc, is_monster=False,
+            )
+        else:
+            # Kicked at nothing — risk of self-injury.
+            self.board.emit_noise(self.player.pos, NOISE_KICK)
+            if self.rng.randint(1, 100) <= KICK_NOTHING_HURT_CHANCE:
+                dmg: int = sum(
+                    self.rng.randint(1, KICK_NOTHING_SIDES)
+                    for _ in range(KICK_NOTHING_DICE)
+                )
+                self.player.take_damage(dmg)
+                msg += " You strain your leg!" if msg else "You strain your leg!"
         return StepResult(message=msg, turn_used=True)
+
+    # ------------------------------------------------------------------
+    # Reading (spellbooks)
+    # ------------------------------------------------------------------
+
+    def _handle_read(self, letter: str) -> StepResult:
+        """Read a spellbook from inventory.
+
+        Teaches the school (or adds proficiency if already known),
+        then the book crumbles to dust and is removed from inventory.
+        """
+        from game.items import Spellbook, ItemType
+        if not letter:
+            return StepResult(message="Read what?")
+        from game.items import letter_to_index
+        idx: int = letter_to_index(letter)
+        if idx < 0 or idx >= len(self.player.inventory):
+            return StepResult(message="You don't have that.")
+        item = self.player.inventory[idx]
+        if item is None:
+            return StepResult(message="You don't have that.")
+        if not isinstance(item, Spellbook):
+            return StepResult(message="You can't read that.")
+        # Learn the school or gain proficiency.
+        _was_new, msg = self.player.magic.learn(item.school)
+        # The spellbook crumbles to dust.
+        self.player.inventory[idx] = None
+        self.turn_counter += 1
+        return StepResult(message=msg, turn_used=True)
+
+    # ------------------------------------------------------------------
+    # Magic
+    # ------------------------------------------------------------------
+
+    def _handle_cast(self, school: Optional[MagicSchool],
+                     direction: Direction) -> StepResult:
+        """Cast a spell from *school* in *direction*.
+
+        Checks concentration, rolls outcome, delegates to the
+        school-specific resolver, applies self-damage and noise.
+        """
+        if school is None:
+            return StepResult(message="Cast what?")
+
+        state: SchoolState = self.player.magic.schools[school]
+        if not state.known:
+            name: str = SCHOOL_NAMES[school]
+            return StepResult(message=f"You don't know {name} magic.")
+
+        cost: int = state.concentration_cost
+        cur_conc: int = self.player.current_traits[Trait.CONCENTRATION]
+        if cur_conc < cost:
+            msg: str = self.rng.choice(LOW_CONC_MESSAGES)
+            return StepResult(message=msg)
+
+        # Spend concentration.
+        self.player.spend_concentration(cost)
+        self.turn_counter += 1
+
+        # Roll outcome based on proficiency.
+        tier = state.tier
+        outcome: CastOutcome = roll_outcome(tier, self.rng)
+
+        # Dispatch to school-specific resolver.
+        from game.spells_fire import resolve_fire
+        if school == MagicSchool.FIRE:
+            cast_result: CastResult = resolve_fire(
+                self, direction, tier, outcome, self.rng
+            )
+        else:
+            # Placeholder for unimplemented schools.
+            cast_result = CastResult()
+            verb: str = SCHOOL_CAST_VERBS.get(school, "invoke magic")
+            cast_result.message = (f"You attempt to {verb}... "
+                                   f"but nothing happens yet.")
+
+        # Apply self-damage from backfire/wild.
+        if cast_result.damage_taken > 0:
+            self.player.take_damage(cast_result.damage_taken)
+
+        # Emit noise from the cast.
+        if cast_result.noise_level > 0:
+            self.board.emit_noise(
+                self.player.pos, cast_result.noise_level,
+                description=cast_result.noise_desc, is_monster=False,
+            )
+
+        # Grant 1 proficiency XP for the cast.
+        state.add_xp(1)
+
+        result: StepResult = StepResult(
+            message=cast_result.message,
+            turn_used=True,
+        )
+
+        # Concentration spent info appended.
+        conc_now: int = self.player.current_traits[Trait.CONCENTRATION]
+        conc_max: int = self.player.maximum_traits[Trait.CONCENTRATION]
+        result.message += f" [Conc: {conc_now}/{conc_max}]"
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Natural healing
+    # ------------------------------------------------------------------
+
+    def _heal_interval(self) -> int:
+        """Turns between natural heals, based on Constitution.
+
+        CON 18 → 10 turns, CON 12 → 30 turns, linear interpolation.
+        """
+        con: int = self.player.current_traits[Trait.CONSTITUTION]
+        interval: int = HEAL_BASE_INTERVAL + (18 - con) * HEAL_CON_SCALE // 3
+        return max(HEAL_BASE_INTERVAL, interval)
+
+    def _any_monster_adjacent(self) -> bool:
+        """True if any monster occupies a cell adjacent to the player."""
+        pr: int = self.player.pos.r
+        pc: int = self.player.pos.c
+        for dr in range(-1, 2):
+            for dc in range(-1, 2):
+                if dr == 0 and dc == 0:
+                    continue
+                nr: int = pr + dr
+                nc: int = pc + dc
+                if 0 <= nr < BOARD_ROWS and 0 <= nc < BOARD_COLUMNS:
+                    if self.board.get_monster_at(Coordinate(nr, nc)) is not None:
+                        return True
+        return False
+
+    def _try_natural_heal(self) -> str:
+        """Heal 1 HP if enough turns have passed and no enemies are adjacent.
+
+        Returns a message string if healing occurred, empty string otherwise.
+        """
+        if self.player.hp >= self.player.max_hp:
+            self._last_heal_turn = self.turn_counter
+            return ""
+        if self._any_monster_adjacent():
+            return ""
+        elapsed: int = self.turn_counter - self._last_heal_turn
+        if elapsed >= self._heal_interval():
+            self._last_heal_turn = self.turn_counter
+            self.player.heal(1)
+            return ""
+        return ""
+
+    # ------------------------------------------------------------------
+    # Concentration regeneration
+    # ------------------------------------------------------------------
+
+    def _conc_interval(self) -> int:
+        """Turns between concentration restores, based on Intelligence.
+
+        INT 18 → every 8 turns, INT 12 → every 24 turns.
+        """
+        intel: int = self.player.current_traits[Trait.INTELLIGENCE]
+        interval: int = CONC_BASE_INTERVAL + (18 - intel) * CONC_INT_SCALE // 3
+        return max(CONC_BASE_INTERVAL, interval)
+
+    def _try_conc_regen(self) -> None:
+        """Restore 1 concentration if enough turns have passed."""
+        cur: int = self.player.current_traits[Trait.CONCENTRATION]
+        mx: int = self.player.maximum_traits[Trait.CONCENTRATION]
+        if cur >= mx:
+            self._last_conc_turn = self.turn_counter
+            return
+        elapsed: int = self.turn_counter - self._last_conc_turn
+        if elapsed >= self._conc_interval():
+            self._last_conc_turn = self.turn_counter
+            self.player.restore_concentration(1)
 
     # ------------------------------------------------------------------
     # Board management
@@ -521,7 +767,8 @@ class GameEngine:
 
     def _new_board(self) -> None:
         """Generate and append a new dungeon level."""
-        self.boards.append(Board(self.rng))
+        level: int = len(self.boards) + 1
+        self.boards.append(Board(self.rng, level=level))
 
     # ------------------------------------------------------------------
     # ML observation interface
@@ -539,3 +786,60 @@ class GameEngine:
             "turn": self.turn_counter,
             "dungeon_level": self.current_board_index + 1,
         }
+
+    # ------------------------------------------------------------------
+    # Save / load — pickle the entire engine state
+    # ------------------------------------------------------------------
+
+    SAVE_DIR: str = "~/.pnh"
+    SAVE_FILE: str = "savegame.pkl"
+
+    def save(self) -> str:
+        """Serialize the full game state to disk.
+
+        Returns the path written.  Clears transient noise events
+        before saving so stale sounds don't replay on load.
+        """
+        for b in self.boards:
+            b.clear_noise()
+        save_dir: str = os.path.expanduser(self.SAVE_DIR)
+        os.makedirs(save_dir, exist_ok=True)
+        path: str = os.path.join(save_dir, self.SAVE_FILE)
+        with open(path, "wb") as f:
+            pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
+        return path
+
+    @classmethod
+    def load(cls) -> Optional[GameEngine]:
+        """Restore a saved game, or return None if no save exists.
+
+        Re-initializes singletons (corner map, brain registry) that
+        are not part of the pickled instance state.
+        """
+        path: str = os.path.join(
+            os.path.expanduser(cls.SAVE_DIR), cls.SAVE_FILE
+        )
+        if not os.path.exists(path):
+            return None
+        with open(path, "rb") as f:
+            engine: GameEngine = pickle.load(f)
+        # Re-establish module-level singletons.
+        initialize_corner_map()
+        BrainRegistry.init()
+        # Re-register any brain instances that were serialized with
+        # monster species so the registry can save them at shutdown.
+        for board in engine.boards:
+            for monster in board.get_all_monsters():
+                species = monster.species
+                if species._brain is not None:
+                    BrainRegistry._brains[species.name] = species._brain
+        return engine
+
+    @classmethod
+    def delete_save(cls) -> None:
+        """Remove the save file (called on player death)."""
+        path: str = os.path.join(
+            os.path.expanduser(cls.SAVE_DIR), cls.SAVE_FILE
+        )
+        if os.path.exists(path):
+            os.remove(path)

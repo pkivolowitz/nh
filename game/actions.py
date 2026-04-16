@@ -80,6 +80,10 @@ class Action(IntEnum):
     CLOSE_DOOR = auto()    # Needs direction parameter.
     KICK_DOOR = auto()     # Needs direction parameter.
 
+    # Magic.
+    CAST = auto()          # Needs school and direction parameters.
+    READ = auto()          # Needs inventory letter parameter.
+
 
 # Convenience: Direction → movement Action.
 DIRECTION_TO_ACTION: dict[Direction, Action] = {

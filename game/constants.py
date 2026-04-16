@@ -129,10 +129,30 @@ NOISE_DROP: int = 3                 # Sound from dropping an item (thud)
 NOISE_KICK: int = 20                # Sound from kicking a door (crash, very loud)
 NOISE_MELEE: int = 8                # Sound from a melee hit (grunts and impact)
 NOISE_MONSTER_MOVE: int = 4         # Default monster footstep noise
+NOISE_DOOR_OPEN: int = 8            # Creak of an opening door — moderate, draws nearby monsters
+NOISE_DOOR_CLOSE: int = 4           # Soft thud of a door pulled shut
+NOISE_DOOR_BREAK: int = 15          # Stuck door giving way — frame splinters, loud
+
+# Maximum kicks before a stuck door yields (rolled per door at generation).
+STUCK_DOOR_MIN_KICKS: int = 1
+STUCK_DOOR_MAX_KICKS: int = 4
 
 NOISE_WALL_ATTENUATION: int = 4     # Extra attenuation per wall or closed door
 NOISE_FAINT_THRESHOLD: float = 1.0  # Minimum audible level
 NOISE_LOUD_THRESHOLD: float = 8.0   # Above this counts as "loud"
+
+# ---------------------------------------------------------------------------
+# Natural healing — HP regenerates slowly outside combat.
+# Constitution determines interval: CON 18 → every 10 turns, CON 12 → every
+# 30 turns.  Formula: HEAL_BASE + (18 - CON) * HEAL_CON_SCALE // 3
+# ---------------------------------------------------------------------------
+HEAL_BASE_INTERVAL: int = 10    # Turns between heals at max CON (18)
+HEAL_CON_SCALE: int = 10        # Numerator of per-point penalty (divided by 3)
+
+# Self-damage from kicking at nothing (strained leg).
+KICK_NOTHING_HURT_CHANCE: int = 25   # Percent chance of self-injury
+KICK_NOTHING_DICE: int = 1           # 1d2 self-damage
+KICK_NOTHING_SIDES: int = 2
 
 # ---------------------------------------------------------------------------
 # Terminal layout

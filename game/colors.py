@@ -18,6 +18,8 @@ CLR_MONSTER: int = 7
 # Per-species colors.  Brown = COLOR_YELLOW without A_BOLD on dark
 # backgrounds -- comfortable in a dark room (not too bright, not too dim).
 CLR_BROWN: int = 8
+CLR_FIRE: int = 9          # Bright red/yellow for burning tiles.
+CLR_SCORCH: int = 10       # Dim residue after fire fades.
 
 
 def init_colors() -> None:
@@ -31,3 +33,5 @@ def init_colors() -> None:
     curses.init_pair(CLR_DOORS, curses.COLOR_YELLOW, -1)
     curses.init_pair(CLR_MONSTER, curses.COLOR_GREEN, -1)
     curses.init_pair(CLR_BROWN, curses.COLOR_YELLOW, -1)
+    curses.init_pair(CLR_FIRE, curses.COLOR_RED, -1)
+    curses.init_pair(CLR_SCORCH, curses.COLOR_YELLOW, -1)

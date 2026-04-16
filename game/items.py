@@ -7,8 +7,10 @@ from __future__ import annotations
 __version__ = "0.1.0"
 
 from enum import IntEnum, auto
+from typing import Optional
 
 from game.constants import MAX_INVENTORY_SLOTS
+from game.magic import MagicSchool, SCHOOL_NAMES
 
 
 class ItemType(IntEnum):
@@ -69,15 +71,24 @@ class BaseItem:
 
 
 class Spellbook(BaseItem):
-    """A spellbook found on the dungeon floor."""
+    """A spellbook found on the dungeon floor.
 
-    def __init__(self) -> None:
+    Each spellbook teaches one school.  The first book in a school
+    unlocks the ability to cast it.  Subsequent books in the same
+    school grant proficiency XP.  All spellbooks crumble to dust
+    once read — they cannot be read again.
+    """
+
+    __slots__ = ("school",)
+
+    def __init__(self, school: MagicSchool = MagicSchool.FIRE) -> None:
         super().__init__()
         self.type = ItemType.SPELLBOOK
         self.symbol = ord("+")
         self.weight_per_item = 5
         self.number_of_like_items = 1
-        self.item_name = "Unknown Spellbook"
+        self.school: MagicSchool = school
+        self.item_name = f"Spellbook of {SCHOOL_NAMES[school]}"
 
     def can_stack_with(self, other: BaseItem) -> bool:
         """Spellbooks never stack — each contains a different spell."""

@@ -20,6 +20,7 @@ from game.coordinate import Coordinate
 from game.items import BaseItem, MAX_INVENTORY_SLOTS, letter_to_index, index_to_letter
 from game.colors import CLR_PLAYER
 from game.constants import PLAYER_SPEED
+from game.magic import SpellKnowledge
 
 
 class Trait(IntEnum):
@@ -71,6 +72,9 @@ class Player(Creature):
         self.race: str = "Human"
         self.alignment: str = "Neutral"
 
+        # Magic system.
+        self.magic: SpellKnowledge = SpellKnowledge()
+
     # -- damage / healing (keep traits in sync) ----------------------------
 
     def take_damage(self, amount: int) -> int:
@@ -83,6 +87,23 @@ class Player(Creature):
         """Restore HP and keep the traits array in sync."""
         actual: int = super().heal(amount)
         self.current_traits[Trait.HEALTH] = self.hp
+        return actual
+
+    def spend_concentration(self, amount: int) -> bool:
+        """Spend *amount* concentration.  Returns False if insufficient."""
+        current: int = self.current_traits[Trait.CONCENTRATION]
+        if current < amount:
+            return False
+        self.current_traits[Trait.CONCENTRATION] = current - amount
+        return True
+
+    def restore_concentration(self, amount: int) -> int:
+        """Restore up to *amount* concentration.  Returns actual restored."""
+        current: int = self.current_traits[Trait.CONCENTRATION]
+        maximum: int = self.maximum_traits[Trait.CONCENTRATION]
+        room: int = maximum - current
+        actual: int = min(amount, room)
+        self.current_traits[Trait.CONCENTRATION] = current + actual
         return actual
 
     # -- inventory management ------------------------------------------
