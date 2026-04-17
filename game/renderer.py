@@ -87,6 +87,18 @@ class Renderer:
         self.sidebar_cols: int = 0
         self.show_original: bool = False
         self.detail_mode: bool = False
+        # Per-frame set of (row, col) tuples the player can currently see.
+        self._visible_cells: set[tuple[int, int]] = set()
+        # Last-seen monster positions: (row, col) → (symbol, color_pair).
+        # Cleared on level change; entries removed when player re-sees
+        # the cell and the monster is gone.
+        self._remembered_monsters: dict[tuple[int, int], tuple[int, int]] = {}
+        # Remembered objects (items, stairs): (row, col) → (ch, attr).
+        # Persists once seen; updated with reality when cell is visible
+        # again (e.g. monster picked up a potion → memory cleared).
+        self._remembered_features: dict[tuple[int, int], tuple[int, int]] = {}
+        # Track level so we can clear memories on level change.
+        self._last_level: int = -1
 
     # ------------------------------------------------------------------
     # Setup / teardown
@@ -129,6 +141,11 @@ class Renderer:
              current_level: int, turn: int) -> None:
         """Render the complete frame: identity, map, monsters, player, status."""
         assert self.map_win is not None and self.sidebar_win is not None
+        # Clear memories when the player changes level.
+        if current_level != self._last_level:
+            self._remembered_monsters.clear()
+            self._remembered_features.clear()
+            self._last_level = current_level
         self._draw_board(board, player)
         self._draw_effects(board)
         self._draw_monsters(board, player)
@@ -244,16 +261,16 @@ class Renderer:
 
     def _draw_board(self, board: Board, player: Player,
                     tr: float = DEFAULT_TORCH_RADIUS) -> None:
-        """Render visible cells with fog of war.
+        """Render cells the player can currently see.
 
-        Performance: known cells are drawn without LOS checks.
-        LOS is only tested for cells within torch range that
-        haven't been marked known yet — a small fraction of the
-        board after the first few steps.
+        Cells outside line of sight are not rendered at all — there is
+        no persistent terrain memory.  Monster memory is handled
+        separately in ``_draw_monsters``.
         """
         win = self.map_win
         assert win is not None
         win.erase()
+        self._visible_cells.clear()
 
         # Pre-compute once per frame.
         pr: int = player.pos.r
@@ -261,6 +278,7 @@ class Renderer:
         tr_sq: float = tr * tr
         in_corridor: bool = board.is_corridor(player.pos)
         cells = board.cells
+        ppos = player.pos
 
         for r in range(BOARD_ROWS):
             row = cells[r]
@@ -276,29 +294,69 @@ class Renderer:
                     self._show_cell(board, coord, cell, force_original=True)
                     continue
 
-                # Limit corridor wall visibility.
+                # Walls, doors, and corridors persist once seen — structural.
+                if (cell.base_type in (CellBaseType.WALL, CellBaseType.DOOR,
+                                       CellBaseType.CORRIDOR)
+                        and cell.is_known):
+                    self._show_cell(board, coord, cell)
+                    continue
+
+                # Visibility check: within personal torch range or on
+                # a cell illuminated by a dungeon torch.
+                dr: int = r - pr
+                dc: int = c - pc
+                within_personal: bool = dr * dr + dc * dc < tr_sq
+                if not (within_personal or cell.lit):
+                    # Not visible — draw remembered feature if any.
+                    feat = self._remembered_features.get((r, c))
+                    if feat is not None:
+                        win.attron(feat[1])
+                        try:
+                            win.addch(BOARD_TOP_OFFSET + r, c, feat[0])
+                        except curses.error:
+                            pass
+                        win.attroff(feat[1])
+                    continue
+
+                # Corridor walls: don't reveal until first seen.
                 if (in_corridor
                         and cell.base_type == CellBaseType.WALL
                         and not cell.is_known):
                     continue
 
-                # Known cells render without LOS checks.
-                if cell.is_known:
-                    self._show_cell(board, coord, cell)
+                if not board.line_of_sight(ppos, coord):
+                    # No LOS — draw remembered feature if any.
+                    feat = self._remembered_features.get((r, c))
+                    if feat is not None:
+                        win.attron(feat[1])
+                        try:
+                            win.addch(BOARD_TOP_OFFSET + r, c, feat[0])
+                        except curses.error:
+                            pass
+                        win.attroff(feat[1])
                     continue
 
-                # Unknown cells: only check LOS if within torch range.
-                dr: int = r - pr
-                dc: int = c - pc
-                if dr * dr + dc * dc >= tr_sq:
-                    continue
-
-                if not board.line_of_sight(player.pos, coord):
-                    continue
-
-                # Visible — mark known and draw.
+                # Currently visible — mark known and draw.
                 cell.is_known = True
+                self._visible_cells.add((r, c))
                 self._show_cell(board, coord, cell)
+
+                # Remember interesting features (items, stairs).
+                # Plain floor and corridors are not remembered.
+                key = (r, c)
+                item_sym = board.get_symbol(coord)
+                if item_sym >= 0:
+                    # Item on floor — remember it.
+                    ch = _resolve_ch(item_sym)
+                    attr = self._cell_attr(ch, item_sym, CellBaseType.ROOM)
+                    self._remembered_features[key] = (ch, attr)
+                elif cell.display_c in (DOWN_STAIRS, UP_STAIRS):
+                    ch = _resolve_ch(cell.display_c)
+                    attr = self._cell_attr(ch, cell.display_c, cell.base_type)
+                    self._remembered_features[key] = (ch, attr)
+                else:
+                    # Cell is plain floor or corridor — forget it.
+                    self._remembered_features.pop(key, None)
 
     def _show_cell(self, board: Board, coord: Coordinate, cell,
                    force_original: bool = False) -> None:
@@ -351,15 +409,14 @@ class Renderer:
         """Render active tile effects over the board.
 
         Fire flickers between symbols in bright red.  Scorch marks
-        are dim yellow residue.  Effects only render on known cells
-        so they respect fog of war.
+        are dim yellow residue.  Effects only render on cells the
+        player can currently see.
         """
         win = self.map_win
         assert win is not None
 
         for pos, effect in board.effects.items():
-            cell = board.cells[pos.r][pos.c]
-            if not cell.is_known:
+            if (pos.r, pos.c) not in self._visible_cells:
                 continue
 
             sym: int = effect.symbol
@@ -383,32 +440,54 @@ class Renderer:
 
     def _draw_monsters(self, board: Board, player: Player,
                        tr: float = DEFAULT_TORCH_RADIUS) -> None:
-        """Draw monsters visible to the player.
+        """Draw monsters visible to the player, plus remembered ones.
 
         A monster is visible when the player has line of sight and
         either the monster is within the player's personal torch
         radius or the monster's cell is illuminated by a dungeon torch.
+
+        When a monster is seen, its position is remembered.  If the
+        player loses sight of that cell, the monster is drawn at its
+        last-known position until the player can see that cell again.
         """
         win = self.map_win
         assert win is not None
+        visible = self._visible_cells
 
+        # Clear remembered monsters from cells the player can now see
+        # (reality replaces memory).
+        for rc in list(self._remembered_monsters):
+            if rc in visible:
+                del self._remembered_monsters[rc]
+
+        # Draw live monsters and update memory.
         for monster in board.get_all_monsters():
             coord = monster.pos
+            key = (coord.r, coord.c)
 
-            if not self.show_original:
-                mcell = board.cells[coord.r][coord.c]
-                within_personal: bool = coord.distance(player.pos) < tr
-                if not (within_personal or mcell.lit):
-                    continue
-                if not board.line_of_sight(player.pos, coord):
-                    continue
+            if self.show_original or key in visible:
+                # Currently visible — draw live and remember.
+                self._remembered_monsters[key] = (
+                    monster.symbol, monster.color_pair
+                )
+                attr = curses.color_pair(monster.color_pair)
+                win.attron(attr)
+                try:
+                    win.addch(
+                        BOARD_TOP_OFFSET + coord.r, coord.c, monster.symbol
+                    )
+                except curses.error:
+                    pass
+                win.attroff(attr)
 
-            attr = curses.color_pair(monster.color_pair)
+        # Draw remembered monsters in cells no longer visible.
+        for (mr, mc), (sym, cpair) in self._remembered_monsters.items():
+            if (mr, mc) in visible:
+                continue  # Already drawn live above.
+            attr = curses.color_pair(cpair) | curses.A_DIM
             win.attron(attr)
             try:
-                win.addch(
-                    BOARD_TOP_OFFSET + coord.r, coord.c, monster.symbol
-                )
+                win.addch(BOARD_TOP_OFFSET + mr, mc, sym)
             except curses.error:
                 pass
             win.attroff(attr)
