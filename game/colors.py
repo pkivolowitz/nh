@@ -20,6 +20,8 @@ CLR_MONSTER: int = 7
 CLR_BROWN: int = 8
 CLR_FIRE: int = 9          # Bright red/yellow for burning tiles.
 CLR_SCORCH: int = 10       # Dim residue after fire fades.
+CLR_GRAY: int = 11         # Dull gray — rats, rubble.
+CLR_FOOD: int = 12         # Green — edible items.
 
 
 def init_colors() -> None:
@@ -35,3 +37,5 @@ def init_colors() -> None:
     curses.init_pair(CLR_BROWN, curses.COLOR_YELLOW, -1)
     curses.init_pair(CLR_FIRE, curses.COLOR_RED, -1)
     curses.init_pair(CLR_SCORCH, curses.COLOR_YELLOW, -1)
+    curses.init_pair(CLR_GRAY, curses.COLOR_WHITE, -1)
+    curses.init_pair(CLR_FOOD, curses.COLOR_GREEN, -1)

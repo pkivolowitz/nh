@@ -36,3 +36,8 @@ core
 
 .vscode
 *.swp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo

@@ -19,6 +19,7 @@ class ItemType(IntEnum):
     POTION = auto()
     SCROLL = auto()
     SPELLBOOK = auto()
+    FOOD = auto()
 
 
 def letter_to_index(c: str) -> int:
@@ -65,6 +66,12 @@ class BaseItem:
         """Total carried weight of this item stack."""
         return self.weight_per_item * self.number_of_like_items
 
+    def describe(self) -> str:
+        """Human-readable description including stack count."""
+        if self.number_of_like_items > 1:
+            return f"{self.number_of_like_items} {self.item_name}s"
+        return self.item_name
+
     def can_stack_with(self, other: BaseItem) -> bool:
         """Whether *other* can merge into this stack.  Default: no."""
         return False
@@ -93,3 +100,37 @@ class Spellbook(BaseItem):
     def can_stack_with(self, other: BaseItem) -> bool:
         """Spellbooks never stack — each contains a different spell."""
         return False
+
+
+# Food names and weights — small scraps that attract vermin.
+FOOD_KINDS: list[tuple[str, int]] = [
+    ("crumb of bread", 1),
+    ("morsel of cheese", 1),
+    ("dried meat scrap", 2),
+    ("stale biscuit", 2),
+]
+
+
+class Food(BaseItem):
+    """A small edible item found on the dungeon floor.
+
+    Food attracts rats and other scavengers.  The player can pick
+    it up and drop it as bait.
+    """
+
+    __slots__ = ("food_name",)
+
+    def __init__(self, name: str = "crumb of bread",
+                 weight: int = 1) -> None:
+        super().__init__()
+        self.type = ItemType.FOOD
+        self.symbol = ord("%")
+        self.weight_per_item = weight
+        self.number_of_like_items = 1
+        self.food_name: str = name
+        self.item_name = name
+
+    def can_stack_with(self, other: BaseItem) -> bool:
+        """Food of the same kind stacks."""
+        return (isinstance(other, Food)
+                and other.food_name == self.food_name)

@@ -25,7 +25,10 @@ from game.actions import (
     Action, Direction,
     VI_KEY_TO_DIRECTION, DIRECTION_TO_ACTION,
 )
-from game.magic import SCHOOL_HOTKEYS, SCHOOL_NAMES, MagicSchool
+from game.magic import SCHOOL_HOTKEYS, SCHOOL_NAMES, MagicSchool, ProficiencyTier
+from game.spells_fire import (
+    TIER_HAS_CURSOR, TIER_RADIUS_CHOICES, RADIUS_NAMES,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -216,6 +219,52 @@ def _main(stdscr: curses.window) -> None:
             renderer.detail_mode = not renderer.detail_mode
             continue
 
+        # Wizard mode: set school proficiency for testing.
+        if c == ord("W"):
+            from game.magic import TIER_THRESHOLDS
+            school_opts: list[str] = [
+                f"{hk}={SCHOOL_NAMES[sc]}"
+                for hk, sc in SCHOOL_HOTKEYS.items()
+            ]
+            renderer.show_message(
+                "[WIZARD] School? [" + ", ".join(school_opts) + "] "
+            )
+            wch = renderer.getch_blocking()
+            if wch == 27:
+                renderer.clear_info_line()
+                continue
+            wkey = chr(wch).lower() if 0 <= wch < 256 else ""
+            if wkey not in SCHOOL_HOTKEYS:
+                last_message = "Invalid school."
+                continue
+            wschool = SCHOOL_HOTKEYS[wkey]
+            tier_opts: list[str] = [
+                f"{t.value}={t.name.lower()}"
+                for t in ProficiencyTier
+            ]
+            renderer.show_message(
+                f"[WIZARD] {SCHOOL_NAMES[wschool]} tier? ["
+                + ", ".join(tier_opts) + "] "
+            )
+            tch = renderer.getch_blocking()
+            if tch == 27:
+                renderer.clear_info_line()
+                continue
+            tidx = tch - ord("0")
+            try:
+                chosen_tier = ProficiencyTier(tidx)
+            except ValueError:
+                last_message = "Invalid tier."
+                continue
+            ws = engine.player.magic.schools[wschool]
+            ws.known = True
+            ws.xp = TIER_THRESHOLDS[chosen_tier]
+            last_message = (
+                f"[WIZARD] {SCHOOL_NAMES[wschool]} set to "
+                f"{chosen_tier.name.lower()}."
+            )
+            continue
+
         # Movement (lowercase = one step, uppercase = run).
         ch = chr(c) if 0 <= c < 256 else ""
         if ch.lower() in VI_KEY_TO_DIRECTION:
@@ -364,20 +413,73 @@ def _main(stdscr: curses.window) -> None:
                 last_message = "You don't know that school."
                 continue
             chosen_school: MagicSchool = SCHOOL_HOTKEYS[sch_key]
-            # Ask for direction.
-            renderer.show_message(f"Cast {SCHOOL_NAMES[chosen_school]} in what direction? ")
-            dir_ch = renderer.getch_blocking()
-            if dir_ch == 27:
-                renderer.clear_info_line()
-                continue
-            dir_key = chr(dir_ch) if 0 <= dir_ch < 256 else ""
-            if dir_key.lower() in VI_KEY_TO_DIRECTION:
-                direction = VI_KEY_TO_DIRECTION[dir_key.lower()]
+            school_state = engine.player.magic.schools[chosen_school]
+            tier: ProficiencyTier = school_state.tier
+
+            # Targeting: cursor for apprentice+, direction for novice.
+            target_pos = None
+            direction = Direction.NONE
+            if TIER_HAS_CURSOR.get(tier, False):
+                renderer.show_message(
+                    f"Select target for {SCHOOL_NAMES[chosen_school]}. "
+                    f"Move cursor, '.' to confirm, ESC to cancel."
+                )
+                target_pos = renderer.select_target(
+                    engine.board, engine.player.pos
+                )
+                if target_pos is None:
+                    renderer.clear_info_line()
+                    continue
             else:
-                direction = Direction.NONE
-            result = engine.step(Action.CAST,
-                                 school=chosen_school,
-                                 direction=direction)
+                renderer.show_message(
+                    f"Cast {SCHOOL_NAMES[chosen_school]} in what direction? "
+                )
+                dir_ch = renderer.getch_blocking()
+                if dir_ch == 27:
+                    renderer.clear_info_line()
+                    continue
+                dir_key = chr(dir_ch) if 0 <= dir_ch < 256 else ""
+                if dir_key.lower() in VI_KEY_TO_DIRECTION:
+                    direction = VI_KEY_TO_DIRECTION[dir_key.lower()]
+                else:
+                    direction = Direction.NONE
+
+            # Radius selection: only if tier offers choices.
+            spell_radius: int = -1
+            radius_choices = TIER_RADIUS_CHOICES.get(tier, [])
+            if radius_choices:
+                opts_r: list[str] = [
+                    f"{i+1}={RADIUS_NAMES[r]}"
+                    for i, r in enumerate(radius_choices)
+                ]
+                renderer.show_message(
+                    "Blast size? [" + ", ".join(opts_r) + "] "
+                )
+                rad_ch = renderer.getch_blocking()
+                if rad_ch == 27:
+                    renderer.clear_info_line()
+                    continue
+                rad_idx = rad_ch - ord("1")
+                if 0 <= rad_idx < len(radius_choices):
+                    spell_radius = radius_choices[rad_idx]
+                else:
+                    last_message = "Invalid choice."
+                    continue
+
+            # Redraw before resolving so the cursor is cleaned up.
+            renderer.draw(
+                engine.board, engine.player,
+                engine.current_board_index + 1,
+                engine.turn_counter,
+            )
+
+            result = engine.step(
+                Action.CAST,
+                school=chosen_school,
+                direction=direction,
+                target_pos=target_pos,
+                spell_radius=spell_radius,
+            )
             last_message = result.message
             continue
 

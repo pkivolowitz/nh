@@ -59,11 +59,14 @@ class BumpAttack(CombatAction):
         self.verb: str = verb
 
     def execute(self, attacker: Creature, defender: Creature,
-                rng: random.Random) -> CombatResult:
-        """Roll damage dice and apply to *defender*."""
+                rng: random.Random,
+                damage_bonus: int = 0) -> CombatResult:
+        """Roll damage dice, add *damage_bonus*, and apply to *defender*."""
         damage: int = sum(
             rng.randint(1, self.sides) for _ in range(self.dice)
-        )
+        ) + damage_bonus
+        if damage < 0:
+            damage = 0
         actual: int = defender.take_damage(damage)
         return CombatResult(
             hit=True,

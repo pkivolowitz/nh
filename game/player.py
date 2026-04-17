@@ -25,7 +25,8 @@ from game.magic import SpellKnowledge
 
 class Trait(IntEnum):
     """Indices into the traits arrays."""
-    INTELLIGENCE = 0
+    STRENGTH = 0
+    INTELLIGENCE = auto()
     CONSTITUTION = auto()
     DEXTERITY = auto()
     LEVEL = auto()
@@ -44,8 +45,8 @@ class Player(Creature):
         maximum_traits: list[int] = [0] * tc
 
         # Roll stat-based traits.
-        for t in (Trait.INTELLIGENCE, Trait.CONSTITUTION, Trait.DEXTERITY,
-                  Trait.HEALTH, Trait.CONCENTRATION):
+        for t in (Trait.STRENGTH, Trait.INTELLIGENCE, Trait.CONSTITUTION,
+                  Trait.DEXTERITY, Trait.HEALTH, Trait.CONCENTRATION):
             v = rng.randint(12, 18)
             current_traits[t] = maximum_traits[t] = v
 
@@ -116,10 +117,16 @@ class Player(Creature):
         return ""
 
     def add_to_inventory(self, item: BaseItem) -> str:
-        """Add *item* to the next free slot.
+        """Add *item* to inventory, stacking with a matching item first.
 
-        Returns the assigned letter, or '' if full.
+        Returns the assigned letter (existing or new slot), or '' if full.
         """
+        # Try to stack with an existing item.
+        for i, existing in enumerate(self.inventory):
+            if existing is not None and existing.can_stack_with(item):
+                existing.number_of_like_items += item.number_of_like_items
+                return index_to_letter(i)
+        # No stack match — use a new slot.
         letter = self.next_available_letter()
         if not letter:
             return ""
@@ -139,6 +146,33 @@ class Player(Creature):
     def weight_of_inventory(self) -> int:
         """Total weight of every carried item."""
         return sum(it.weight() for it in self.inventory if it is not None)
+
+    def max_carry_weight(self) -> int:
+        """Maximum carry weight based on STRENGTH.
+
+        Base 50 + 10 per STR point above 10.  STR 12 = 70, STR 18 = 130.
+        """
+        return 50 + self.current_traits[Trait.STRENGTH] * 10 - 100
+
+    def is_overburdened(self) -> bool:
+        """True if carrying more than max carry weight."""
+        return self.weight_of_inventory() > self.max_carry_weight()
+
+    def melee_damage_bonus(self) -> int:
+        """Bonus melee damage from STRENGTH.
+
+        STR 14 = +0, STR 18 = +2, STR 12 = -1.
+        Minimum bonus is -1 so weak characters aren't completely useless.
+        """
+        return max(-1, (self.current_traits[Trait.STRENGTH] - 14) // 2)
+
+    def kick_bonus(self) -> int:
+        """Bonus kick chance percentage from STRENGTH.
+
+        STR 14 = +0%, STR 18 = +20%.  Applied to locked/closed door
+        kick success rolls.
+        """
+        return max(0, (self.current_traits[Trait.STRENGTH] - 14) * 5)
 
     def total_inventory_count(self) -> int:
         """Sum of item counts across all occupied slots."""

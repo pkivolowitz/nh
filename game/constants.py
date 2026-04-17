@@ -83,8 +83,8 @@ MONSTER_ROOM_CHANCE: int = 40  # Percent chance a non-player room gets monsters
 # torches can light an entire room.  Rooms without torches stay dark.
 # ---------------------------------------------------------------------------
 TORCH_LIGHT_RADIUS: float = 3.5    # Cells illuminated around each wall torch
-TORCH_ROOM_CHANCE: int = 70        # Percent chance a room gets any torches
-MAX_TORCHES_PER_ROOM: int = 3      # Max torches placed on a single room's walls
+TORCH_ROOM_CHANCE: int = 90        # Percent chance a room gets any torches
+MAX_TORCHES_PER_ROOM: int = 5      # Max torches placed on a single room's walls
 
 # ---------------------------------------------------------------------------
 # Player combat (unarmed)

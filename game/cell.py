@@ -29,6 +29,8 @@ class DoorState(IntEnum):
     DOOR_CLOSED = 3     # Blocks movement and LOS.
     DOOR_LOCKED = 4     # Must unlock or kick.
     DOOR_STUCK = 5      # Must force open or kick.
+    # DOOR_CHARRED was here briefly — replaced by Cell.door_charred flag
+    # so a charred door retains its open/closed state.
 
 
 class Cell:
@@ -51,6 +53,7 @@ class Cell:
         "door_state",
         "door_horizontal",
         "door_kicks_remaining",
+        "door_charred",
     )
 
     def __init__(self) -> None:
@@ -65,3 +68,4 @@ class Cell:
         self.door_state: DoorState = DoorState.DOOR_NONE
         self.door_horizontal: bool = False
         self.door_kicks_remaining: int = 0
+        self.door_charred: bool = False

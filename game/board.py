@@ -168,8 +168,13 @@ class Board:
     # ------------------------------------------------------------------
 
     def add_goodie(self, c: Coordinate, item: BaseItem) -> None:
-        """Place an item on the floor at *c*."""
-        self.goodies.setdefault(c, []).append(item)
+        """Place an item on the floor at *c*, stacking if possible."""
+        pile: list[BaseItem] = self.goodies.setdefault(c, [])
+        for existing in pile:
+            if existing.can_stack_with(item):
+                existing.number_of_like_items += item.number_of_like_items
+                return
+        pile.append(item)
 
     def remove_goodies(self, c: Coordinate) -> list[BaseItem]:
         """Remove and return all items at *c*."""
@@ -367,17 +372,24 @@ class Board:
     def add_fire(self, pos: Coordinate) -> None:
         """Place a fire effect at *pos*.
 
-        If the cell contains a closed/stuck/locked door, the fire
-        burns it open.  Fire replaces any existing effect at this cell.
+        Fire burns doors in stages:
+            intact → charred (retains open/closed state)
+            charred → missing (destroyed completely)
+        A charred closed door still blocks — burn it again or kick it
+        to destroy.  A charred open door can't be closed.
+        Fire replaces any existing effect at this cell.
         """
         cell = self.cells[pos.r][pos.c]
-        # Fire burns doors open.
-        if (cell.base_type == CellBaseType.DOOR
-                and cell.door_state in (DoorState.DOOR_CLOSED,
-                                        DoorState.DOOR_STUCK,
-                                        DoorState.DOOR_LOCKED)):
-            cell.door_state = DoorState.DOOR_OPEN
-            self._update_door_display(pos.r, pos.c)
+        if cell.base_type == CellBaseType.DOOR:
+            if cell.door_charred:
+                # Already charred — next fire destroys it.
+                cell.door_state = DoorState.DOOR_MISSING
+                cell.door_charred = False
+                self._update_door_display(pos.r, pos.c)
+            elif cell.door_state != DoorState.DOOR_MISSING:
+                # First fire chars the door but keeps its state.
+                cell.door_charred = True
+                self._update_door_display(pos.r, pos.c)
         self.effects[pos] = TileEffect(
             EffectType.FIRE, pos, FIRE_DURATION, FIRE_DAMAGE_PER_TURN
         )
@@ -563,6 +575,8 @@ class Board:
             return "There is nothing there to open.", "", 0
         if cell.door_state in (DoorState.DOOR_OPEN, DoorState.DOOR_MISSING):
             return "This door is already open.", "", 0
+        if cell.door_charred:
+            return "The charred door is jammed. Try kicking it.", "", 0
         if cell.door_state == DoorState.DOOR_LOCKED:
             return "This door is locked.", "", 0
         if cell.door_state == DoorState.DOOR_STUCK:
@@ -590,6 +604,8 @@ class Board:
             return "This door is already closed.", "", 0
         if cell.door_state == DoorState.DOOR_MISSING:
             return "There is no door there to close.", "", 0
+        if cell.door_charred:
+            return "The charred door no longer operates.", "", 0
         if cell.door_state == DoorState.DOOR_OPEN:
             cell.door_state = DoorState.DOOR_CLOSED
             self._update_door_display(c.r, c.c)
@@ -598,11 +614,14 @@ class Board:
             return flavor, noise_desc, NOISE_DOOR_CLOSE
         return "", "", 0
 
-    def try_kick_door(self, c: Coordinate) -> tuple[str, str, int]:
+    def try_kick_door(self, c: Coordinate,
+                      kick_bonus: int = 0) -> tuple[str, str, int]:
         """Kick the door at *c*.  Can force stuck and locked doors.
 
-        Stuck doors track remaining kicks and yield with escalating
-        drama.  Returns (player_message, noise_description, noise_level).
+        *kick_bonus* is an additive percentage from STRENGTH applied to
+        locked and closed door success rolls.  Stuck doors track
+        remaining kicks and yield with escalating drama.
+        Returns (player_message, noise_description, noise_level).
         """
         from game.constants import NOISE_KICK, NOISE_DOOR_BREAK
         if not (0 <= c.r < BOARD_ROWS and 0 <= c.c < BOARD_COLUMNS):
@@ -611,7 +630,16 @@ class Board:
         if cell.base_type != CellBaseType.DOOR:
             return "You kick at nothing.", "", 0
         if cell.door_state in (DoorState.DOOR_OPEN, DoorState.DOOR_MISSING):
-            return "That door is already open.", "", 0
+            if not cell.door_charred:
+                return "That door is already open.", "", 0
+
+        # Charred doors crumble with one kick regardless of state.
+        if cell.door_charred:
+            cell.door_state = DoorState.DOOR_MISSING
+            cell.door_charred = False
+            self._update_door_display(c.r, c.c)
+            return ("The charred door crumbles to pieces!",
+                    "splintering wood", NOISE_DOOR_BREAK)
 
         # Stuck doors use the deterministic kick counter.
         if cell.door_state == DoorState.DOOR_STUCK:
@@ -626,9 +654,9 @@ class Board:
                       STUCK_DOOR_MAX_KICKS - cell.door_kicks_remaining - 1)
             return self._STUCK_KICK_PROGRESS[idx], "a heavy impact on wood", NOISE_KICK
 
-        # Locked doors: probabilistic (no counter).
+        # Locked doors: probabilistic (no counter).  STR bonus helps.
         if cell.door_state == DoorState.DOOR_LOCKED:
-            if self.rng.randint(1, 100) <= 25:
+            if self.rng.randint(1, 100) <= 25 + kick_bonus:
                 cell.door_state = DoorState.DOOR_OPEN
                 self._update_door_display(c.r, c.c)
                 return ("The lock snaps and the door swings open!",
@@ -636,9 +664,9 @@ class Board:
             return ("The lock holds against the blow.",
                     "a heavy impact on wood", NOISE_KICK)
 
-        # Closed doors: easy to kick open.
+        # Closed doors: easy to kick open.  STR bonus helps.
         if cell.door_state == DoorState.DOOR_CLOSED:
-            if self.rng.randint(1, 100) <= 80:
+            if self.rng.randint(1, 100) <= 80 + kick_bonus:
                 cell.door_state = DoorState.DOOR_OPEN
                 self._update_door_display(c.r, c.c)
                 flavor, noise_desc = self.rng.choice(self._STUCK_BREAK_FLAVOR)
@@ -889,12 +917,14 @@ class Board:
         """Carve an L-shaped corridor between *src* and *dst*."""
         seeds: list[Coordinate] = []
 
-        # Horizontal leg.
+        # Horizontal leg — iterate through dst.c so the corridor
+        # punches through the destination room's wall.
         if src.c != dst.c:
             dc = 1 if src.c < dst.c else -1
             r = src.r
             c = src.c
-            while c != dst.c:
+            end_c = dst.c + dc
+            while c != end_c:
                 if c < 0 or c >= BOARD_COLUMNS:
                     break
                 self._make_corridor_at(r, c)
@@ -917,12 +947,13 @@ class Board:
                     self._make_corridor_at(s.r, s.c)
                     nspaces -= 1
 
-        # Vertical leg.
+        # Vertical leg — same: iterate through dst.r.
         if src.r != dst.r:
             dr = 1 if src.r < dst.r else -1
             c = dst.c
             r = src.r
-            while r != dst.r:
+            end_r = dst.r + dr
+            while r != end_r:
                 if r < 0 or r >= BOARD_ROWS:
                     break
                 self._make_corridor_at(r, c)
@@ -1031,6 +1062,9 @@ class Board:
         cell = self.cells[r][c]
         if cell.door_state == DoorState.DOOR_MISSING:
             cell.display_c = ord("#")
+        elif cell.door_charred:
+            # Blackened frame — visually damaged regardless of open/closed.
+            cell.display_c = ord("'")
         elif cell.door_state == DoorState.DOOR_OPEN:
             cell.display_c = ord("|") if cell.door_horizontal else ord("-")
         elif cell.door_state in (DoorState.DOOR_CLOSED,
@@ -1223,13 +1257,19 @@ class Board:
     # uncommon — finding one is a meaningful event.
     SPELLBOOK_ROOM_CHANCE: int = 15
 
+    # Chance a room gets a food scrap (attracts rats).
+    FOOD_ROOM_CHANCE: int = 40
+
     def _place_goodies(self, guarantee_fire: bool = False) -> None:
-        """Seed rooms with items.  Spellbooks are rare.
+        """Seed rooms with items.  Spellbooks are rare; food is common.
 
         When *guarantee_fire* is True (level 1), at least one room
         gets a fire spellbook so the player can learn magic early.
+        Food scraps are scattered to attract rats and give the player
+        bait material.
         """
         from game.magic import MagicSchool
+        from game.items import Food, FOOD_KINDS
         schools: list[MagicSchool] = list(MagicSchool)
         placed_fire: bool = False
         for rm in self.rooms:
@@ -1243,3 +1283,9 @@ class Board:
             if self.rng.randint(1, 100) <= self.SPELLBOOK_ROOM_CHANCE:
                 school: MagicSchool = self.rng.choice(schools)
                 self.add_goodie(c, Spellbook(school))
+            # Food scraps — placed at a random floor cell in the room.
+            if self.rng.randint(1, 100) <= self.FOOD_ROOM_CHANCE:
+                food_name, food_wt = self.rng.choice(FOOD_KINDS)
+                food_pos: Coordinate = rm.random_interior_pos(self.rng)
+                if not self.is_a_stairway(food_pos):
+                    self.add_goodie(food_pos, Food(food_name, food_wt))

@@ -56,3 +56,9 @@ class Room:
     def get_centroid(self) -> Coordinate:
         """Return the cached center point of the room."""
         return Coordinate(self._centroid.r, self._centroid.c)
+
+    def random_interior_pos(self, rng: random.Random) -> Coordinate:
+        """Return a random floor cell inside the room (not on walls)."""
+        r: int = rng.randint(self.tl.r + 1, self.br.r - 1)
+        c: int = rng.randint(self.tl.c + 1, self.br.c - 1)
+        return Coordinate(r, c)

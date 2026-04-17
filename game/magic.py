@@ -269,7 +269,7 @@ class SpellKnowledge:
         if not state.known:
             state.known = True
             return True, (f"The book crumbles to dust. "
-                          f"You have learned {name}!")
+                          f"You have learned a little bit about {name}.")
         state.add_xp(SPELLBOOK_XP_BONUS)
         tier_name: str = TIER_NAMES[state.tier]
         return False, (f"The book crumbles to dust. "

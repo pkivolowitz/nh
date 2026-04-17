@@ -5,16 +5,17 @@
 Fire is the first fully implemented school.  Casting fire produces
 effects scaled by proficiency:
 
-- **Novice**: wild burst — random radius, random direction, may hit
-  the caster.  Terrifying and unpredictable.
-- **Apprentice**: aimed but sloppy — hits the target area but with
-  spread.  Collateral damage.
-- **Journeyman**: directed flame — reliable damage in a cone or at
-  a single target.
-- **Expert**: shaped fire — precise area control, can target a single
-  cell without splash.
-- **Master**: surgical flame — can relight a wall torch without
-  scorching the stone, or thread a flame through a doorway.
+- **Novice**: direction only, random distance, random radius.
+  Uncontrolled and dangerous to the caster.
+- **Apprentice**: cursor-targeted, medium radius (no choice).
+  Better aim but no blast control.
+- **Journeyman**: cursor-targeted, choose small or medium radius.
+- **Expert**: cursor-targeted, choose small, medium, or large.
+- **Master**: cursor-targeted, choose small, medium, or large,
+  near-perfect accuracy.
+
+Damage falls off with distance from impact center:
+    cell_damage = base_damage / (1 + dist²)
 
 Monsters in the blast zone take damage.  The noise from fire draws
 attention.  Jackals and other creatures with persistent brains will
@@ -23,7 +24,7 @@ learn over many games that fire means danger and scatter.
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 import random
 from typing import TYPE_CHECKING, Optional
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
 # Fire constants
 # ---------------------------------------------------------------------------
 
-# Base damage at each tier (before outcome modifiers).
+# Base damage at each tier (before area falloff).
 FIRE_BASE_DAMAGE: dict[ProficiencyTier, int] = {
     ProficiencyTier.NOVICE: 4,
     ProficiencyTier.APPRENTICE: 6,
@@ -52,27 +53,59 @@ FIRE_BASE_DAMAGE: dict[ProficiencyTier, int] = {
     ProficiencyTier.MASTER: 12,
 }
 
-# Blast radius at each tier (cells from target center).
-# Higher proficiency = tighter control (smaller if desired).
-FIRE_MAX_RADIUS: dict[ProficiencyTier, int] = {
-    ProficiencyTier.NOVICE: 3,       # Uncontrolled — big and dangerous.
-    ProficiencyTier.APPRENTICE: 2,
-    ProficiencyTier.JOURNEYMAN: 2,
-    ProficiencyTier.EXPERT: 1,
-    ProficiencyTier.MASTER: 0,       # Can hit a single cell.
+# Radius indices: 0=small (single cell), 1=medium, 2=large.
+RADIUS_SMALL: int = 0
+RADIUS_MEDIUM: int = 1
+RADIUS_LARGE: int = 2
+
+# Actual cell radius for each size.
+RADIUS_CELLS: dict[int, int] = {
+    RADIUS_SMALL: 0,     # Just the target cell.
+    RADIUS_MEDIUM: 1,    # Target + adjacent (up to 9 cells).
+    RADIUS_LARGE: 2,     # Two-cell spread (up to 25 cells).
 }
+
+RADIUS_NAMES: dict[int, str] = {
+    RADIUS_SMALL: "small",
+    RADIUS_MEDIUM: "medium",
+    RADIUS_LARGE: "large",
+}
+
+# Which radius choices each tier unlocks.
+# Novice gets no choice (stuck with large — uncontrolled).
+# Control grows with proficiency: masters can focus to a single cell.
+TIER_RADIUS_CHOICES: dict[ProficiencyTier, list[int]] = {
+    ProficiencyTier.NOVICE: [],              # Large, no choice.
+    ProficiencyTier.APPRENTICE: [],          # Fixed large, no choice.
+    ProficiencyTier.JOURNEYMAN: [RADIUS_LARGE, RADIUS_MEDIUM],
+    ProficiencyTier.EXPERT: [RADIUS_LARGE, RADIUS_MEDIUM, RADIUS_SMALL],
+    ProficiencyTier.MASTER: [RADIUS_LARGE, RADIUS_MEDIUM, RADIUS_SMALL],
+}
+
+# Whether cursor targeting is available at this tier.
+TIER_HAS_CURSOR: dict[ProficiencyTier, bool] = {
+    ProficiencyTier.NOVICE: False,
+    ProficiencyTier.APPRENTICE: True,
+    ProficiencyTier.JOURNEYMAN: True,
+    ProficiencyTier.EXPERT: True,
+    ProficiencyTier.MASTER: True,
+}
+
+# Maximum range for fire (same for everyone).
+FIRE_MAX_RANGE: int = 7
 
 # Noise level from fire casting (all tiers are loud).
 FIRE_NOISE: int = 18
 FIRE_NOISE_DESC: str = "a roar of flames"
 
-# Range: how far from the caster fire can reach.
-FIRE_RANGE: dict[ProficiencyTier, int] = {
-    ProficiencyTier.NOVICE: 2,
-    ProficiencyTier.APPRENTICE: 3,
-    ProficiencyTier.JOURNEYMAN: 5,
-    ProficiencyTier.EXPERT: 7,
-    ProficiencyTier.MASTER: 9,
+# Accuracy: chance (0.0-1.0) that the spell hits exactly where aimed.
+# On miss, it drifts 1-2 cells in a random direction.
+FIRE_ACCURACY: dict[ProficiencyTier, float] = {
+    ProficiencyTier.NOVICE: 0.3,
+    ProficiencyTier.APPRENTICE: 0.5,
+    ProficiencyTier.JOURNEYMAN: 0.7,
+    ProficiencyTier.EXPERT: 0.9,
+    ProficiencyTier.MASTER: 1.0,
 }
 
 # ---------------------------------------------------------------------------
@@ -116,9 +149,54 @@ _BACKFIRE_MESSAGES: list[str] = [
     "The spell collapses — fire erupts at your feet!",
 ]
 
-# Master-tier special: relighting a torch.
-_KINDLE_MESSAGE: str = ("You extend a thread of flame — the torch "
-                         "catches and burns again.")
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _trace_to_target(board, origin: Coordinate,
+                     target: Coordinate) -> Coordinate:
+    """Walk from *origin* toward *target*, stopping at walls.
+
+    Returns the last open cell before hitting a wall, or *target*
+    if the path is clear.
+    """
+    if origin == target:
+        return target
+
+    dist: float = origin.distance(target)
+    if dist < 1.0:
+        return target
+
+    # Step along the ray in small increments.
+    steps: int = int(dist) + 1
+    prev: Coordinate = origin
+    for i in range(1, steps + 1):
+        t: float = i / steps
+        mid: Coordinate = origin.lerp(target, t)
+        cell = board.cells[mid.r][mid.c]
+        from game.cell import CellBaseType, DoorState
+        door_blocks = (
+            cell.base_type == CellBaseType.DOOR
+            and cell.door_state not in (DoorState.DOOR_OPEN,
+                                        DoorState.DOOR_MISSING)
+        )
+        if cell.base_type in (CellBaseType.EMPTY, CellBaseType.WALL) or door_blocks:
+            return prev
+        prev = mid
+    return prev
+
+
+def _apply_drift(rng: random.Random, target: Coordinate,
+                 max_drift: int) -> Coordinate:
+    """Shift *target* by a random offset of 1 to *max_drift* cells."""
+    dr: int = rng.randint(-max_drift, max_drift)
+    dc: int = rng.randint(-max_drift, max_drift)
+    if dr == 0 and dc == 0:
+        dr = rng.choice([-1, 1])
+    nr: int = max(0, min(BOARD_ROWS - 1, target.r + dr))
+    nc: int = max(0, min(BOARD_COLUMNS - 1, target.c + dc))
+    return Coordinate(nr, nc)
 
 
 # ---------------------------------------------------------------------------
@@ -127,15 +205,20 @@ _KINDLE_MESSAGE: str = ("You extend a thread of flame — the torch "
 
 def resolve_fire(engine: GameEngine, direction: Direction,
                  tier: ProficiencyTier, outcome: CastOutcome,
-                 rng: random.Random) -> CastResult:
+                 rng: random.Random, *,
+                 target_pos: Optional[Coordinate] = None,
+                 chosen_radius: int = -1) -> CastResult:
     """Resolve a fire cast and apply effects to the game world.
 
     Args:
         engine: The game engine (for board access, damage application).
-        direction: Where the player aimed.
+        direction: Where the player aimed (novice only).
         tier: Current proficiency tier in fire.
         outcome: The pre-rolled cast outcome.
         rng: Seeded random source.
+        target_pos: Cursor-selected target cell (None for novice).
+        chosen_radius: Player's radius choice (0/1/2) or -1 for
+            tier-assigned default.
 
     Returns:
         A CastResult with all details for the engine to report.
@@ -147,13 +230,16 @@ def resolve_fire(engine: GameEngine, direction: Direction,
     result.noise_desc = FIRE_NOISE_DESC
 
     player_pos: Coordinate = engine.player.pos
+    board = engine.board
 
+    # -- Fizzle: nothing happens. --
     if outcome == CastOutcome.FIZZLE:
         result.message = rng.choice(_FIZZLE_MESSAGES)
-        result.noise_level = 3  # Barely audible puff.
+        result.noise_level = 3
         result.noise_desc = "a faint sizzle"
         return result
 
+    # -- Backfire: damage self. --
     if outcome == CastOutcome.BACKFIRE:
         result.message = rng.choice(_BACKFIRE_MESSAGES)
         dmg: int = max(1, FIRE_BASE_DAMAGE[tier] // 2)
@@ -161,69 +247,90 @@ def resolve_fire(engine: GameEngine, direction: Direction,
         result.target_pos = (player_pos.r, player_pos.c)
         return result
 
-    # Determine target center based on outcome.
-    dr, dc = DIRECTION_DELTA.get(direction, (0, 0))
-    fire_range: int = FIRE_RANGE[tier]
+    # -- Determine impact point. --
+    if target_pos is not None:
+        # Cursor-targeted (apprentice+).
+        aimed_at: Coordinate = target_pos
+    else:
+        # Novice: direction + random distance.
+        dr, dc = DIRECTION_DELTA.get(direction, (0, 0))
+        dist: int = rng.randint(1, FIRE_MAX_RANGE)
+        aim_r: int = max(0, min(BOARD_ROWS - 1, player_pos.r + dr * dist))
+        aim_c: int = max(0, min(BOARD_COLUMNS - 1, player_pos.c + dc * dist))
+        aimed_at = Coordinate(aim_r, aim_c)
 
+    # Trace LOS — stop at walls.
+    impact: Coordinate = _trace_to_target(board, player_pos, aimed_at)
+
+    # Apply accuracy drift.
     if outcome == CastOutcome.MISFIRE:
-        # Random adjacent direction instead of intended.
-        dirs = [d for d in Direction if d != Direction.NONE]
-        misfire_dir: Direction = rng.choice(dirs)
-        dr, dc = DIRECTION_DELTA[misfire_dir]
+        # Misfire: large random drift regardless of tier.
+        impact = _apply_drift(rng, impact, 3)
         result.message = rng.choice(_MISFIRE_MESSAGES)
     elif outcome == CastOutcome.WILD:
+        # Wild: moderate drift.
+        impact = _apply_drift(rng, impact, 2)
         result.message = rng.choice(_WILD_MESSAGES)
-    elif outcome == CastOutcome.PARTIAL:
-        result.message = rng.choice(_PARTIAL_MESSAGES)
-        fire_range = max(1, fire_range // 2)
-    elif outcome == CastOutcome.CLEAN:
-        result.message = rng.choice(_CLEAN_MESSAGES)
-
-    # Target center: walk fire_range steps in direction from player.
-    target_r: int = player_pos.r + dr * fire_range
-    target_c: int = player_pos.c + dc * fire_range
-    target_r = max(0, min(BOARD_ROWS - 1, target_r))
-    target_c = max(0, min(BOARD_COLUMNS - 1, target_c))
-    result.target_pos = (target_r, target_c)
-
-    # Determine blast radius.
-    if outcome == CastOutcome.WILD:
-        # Wild: use max uncontrolled radius.
-        radius: int = FIRE_MAX_RADIUS[ProficiencyTier.NOVICE]
-    elif outcome == CastOutcome.MISFIRE:
-        radius = FIRE_MAX_RADIUS[tier]
-    elif outcome == CastOutcome.PARTIAL:
-        radius = FIRE_MAX_RADIUS[tier]
     else:
-        radius = FIRE_MAX_RADIUS[tier]
+        # Clean or partial: tier-based accuracy.
+        accuracy: float = FIRE_ACCURACY[tier]
+        if rng.random() > accuracy:
+            impact = _apply_drift(rng, impact, 1)
+        if outcome == CastOutcome.PARTIAL:
+            result.message = rng.choice(_PARTIAL_MESSAGES)
+        else:
+            result.message = rng.choice(_CLEAN_MESSAGES)
 
-    # Determine base damage.
+    # Clamp impact to bounds.
+    impact = Coordinate(
+        max(0, min(BOARD_ROWS - 1, impact.r)),
+        max(0, min(BOARD_COLUMNS - 1, impact.c)),
+    )
+    result.target_pos = (impact.r, impact.c)
+
+    # -- Determine blast radius. --
+    if chosen_radius >= 0:
+        radius: int = RADIUS_CELLS[chosen_radius]
+    else:
+        # No choice — novice and apprentice are stuck with large.
+        radius = RADIUS_CELLS[RADIUS_LARGE]
+
+    # Wild outcome forces maximum radius regardless of choice.
+    if outcome == CastOutcome.WILD:
+        radius = RADIUS_CELLS[RADIUS_LARGE]
+
+    # -- Base damage, reduced for partial. --
     base_dmg: int = FIRE_BASE_DAMAGE[tier]
     if outcome == CastOutcome.PARTIAL:
         base_dmg = max(1, base_dmg * 2 // 3)
-    elif outcome == CastOutcome.WILD:
-        # Wild does full damage but to unintended area.
-        pass
 
-    # Apply damage to monsters in the blast zone.
+    # -- Apply fire and damage in the blast zone. --
     total_dealt: int = 0
     kills: list[str] = []
     hit_monsters: list[str] = []
 
-    for mr in range(target_r - radius, target_r + radius + 1):
-        for mc in range(target_c - radius, target_c + radius + 1):
+    for mr in range(impact.r - radius, impact.r + radius + 1):
+        for mc in range(impact.c - radius, impact.c + radius + 1):
             if not (0 <= mr < BOARD_ROWS and 0 <= mc < BOARD_COLUMNS):
                 continue
-            # Distance from blast center — damage falls off.
-            dist: int = abs(mr - target_r) + abs(mc - target_c)
-            if dist > radius:
+            # Manhattan distance from blast center.
+            dist_from_center: int = abs(mr - impact.r) + abs(mc - impact.c)
+            if dist_from_center > radius:
                 continue
-            cell_dmg: int = max(1, base_dmg - dist * 2)
+
+            # Damage falls off with distance squared.
+            cell_dmg: int = max(1, base_dmg // (1 + dist_from_center * dist_from_center))
 
             pos: Coordinate = Coordinate(mr, mc)
-            # Place fire on the board — visible, persistent, interactive.
-            engine.board.add_fire(pos)
-            monster = engine.board.get_monster_at(pos)
+
+            # Walls block the blast from spreading through them.
+            if not board.line_of_sight(impact, pos):
+                continue
+
+            # Place fire on the board.
+            board.add_fire(pos)
+
+            monster = board.get_monster_at(pos)
             if monster is not None:
                 actual: int = monster.take_damage(cell_dmg)
                 total_dealt += actual
@@ -233,20 +340,17 @@ def resolve_fire(engine: GameEngine, direction: Direction,
                         brain.record_outcome(
                             monster, monster.last_action, REWARD_DEATH, engine
                         )
-                    engine.board.remove_monster(pos)
+                    board.remove_monster(pos)
                     kills.append(monster.name)
                 else:
                     hit_monsters.append(monster.name)
-                    # Shaping reward: took fire damage but survived.
-                    # Teaches the brain that being near fire is painful
-                    # even when you don't die.
                     if monster.last_action is not None:
                         brain.record_outcome(
                             monster, monster.last_action,
                             REWARD_FIRE_DAMAGE, engine
                         )
 
-            # Self-damage if player is in the blast zone (wild/misfire).
+            # Self-damage if player is in the blast zone.
             if pos == player_pos and outcome in (CastOutcome.WILD,
                                                   CastOutcome.MISFIRE):
                 self_dmg: int = max(1, cell_dmg // 2)
@@ -254,19 +358,17 @@ def resolve_fire(engine: GameEngine, direction: Direction,
 
     result.damage_dealt = total_dealt
 
-    # Shaping reward for monsters near the blast but not hit.
-    # Being adjacent to an explosion is terrifying even if you
-    # weren't in the direct blast — teaches avoidance before death.
+    # -- Fear reward for monsters near the blast but not hit. --
     fear_radius: int = radius + 2
-    for mr in range(target_r - fear_radius, target_r + fear_radius + 1):
-        for mc in range(target_c - fear_radius, target_c + fear_radius + 1):
+    for mr in range(impact.r - fear_radius, impact.r + fear_radius + 1):
+        for mc in range(impact.c - fear_radius, impact.c + fear_radius + 1):
             if not (0 <= mr < BOARD_ROWS and 0 <= mc < BOARD_COLUMNS):
                 continue
-            dist = abs(mr - target_r) + abs(mc - target_c)
-            if dist <= radius or dist > fear_radius:
-                continue  # Already handled above, or too far.
+            dist_fc: int = abs(mr - impact.r) + abs(mc - impact.c)
+            if dist_fc <= radius or dist_fc > fear_radius:
+                continue
             pos = Coordinate(mr, mc)
-            monster = engine.board.get_monster_at(pos)
+            monster = board.get_monster_at(pos)
             if monster is not None and monster.is_alive:
                 brain = monster.species.get_brain()
                 if monster.last_action is not None:
@@ -275,7 +377,7 @@ def resolve_fire(engine: GameEngine, direction: Direction,
                         REWARD_FIRE_NEAR, engine
                     )
 
-    # Append kill/hit info to the message.
+    # -- Append kill/hit info to the message. --
     if kills:
         kill_str: str = ", ".join(kills)
         result.message += f" The flames consume the {kill_str}!"

@@ -67,6 +67,15 @@ REWARD_DEATH: float = -5.0
 REWARD_FIRE_NEAR: float = -2.0      # Survived a fire blast — teaches avoidance
 REWARD_FIRE_DAMAGE: float = -3.0    # Took fire damage but lived — stronger signal
 
+# Rat-specific reward signals.
+REWARD_RAT_FLEE: float = 0.15       # Increased distance from player — good
+REWARD_RAT_APPROACH_PREY: float = -0.10  # Got closer to player — bad for a rat
+REWARD_RAT_FOOD_CLOSER: float = 0.20    # Moved toward food — strong positive
+REWARD_RAT_ON_FOOD: float = 0.50    # Reached food cell — jackpot
+
+# Detection radius for rats sensing food.
+RAT_FOOD_SENSE_RADIUS: float = 8.0
+
 # Exploration rate bounds.  Starts high (try everything), decays toward
 # a floor as the species accumulates experience across games.
 EXPLORATION_MAX: float = 0.30
@@ -406,4 +415,245 @@ class JackalBrain(Brain):
             brain.total_experiences = data.get("total_experiences", 0)
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             logger.debug("Failed to load brain from %s: %s", path, exc)
+        return brain
+
+
+# ---------------------------------------------------------------------------
+# Rat brain -- cowardly scavenger
+# ---------------------------------------------------------------------------
+
+class RatBrain(Brain):
+    """Rodent-intelligence brain.
+
+    Rats are the opposite of jackals: they flee the player, seek
+    food on the floor, and only bite when cornered.  Learning is
+    the same tabular Q-table but with reward signals tuned for
+    scavenging and survival, not aggression.
+
+    Perception axes:
+        can_see_prey (bool): player is visible
+        prey_distance (binned): how close the danger is
+        hp (binned): own health
+        food_nearby (bool): any food within sense radius
+        food_direction (dr, dc): sign-only direction to nearest food
+        escape_routes (int): how many adjacent cells lead away from player
+    """
+
+    def __init__(self) -> None:
+        self.q_table: dict[str, dict[str, dict[str, float]]] = {}
+        self.total_experiences: int = 0
+
+    @property
+    def exploration_rate(self) -> float:
+        """Epsilon for epsilon-greedy, decays with experience."""
+        decay: float = EXPLORATION_MAX - EXPLORATION_MIN
+        progress: float = min(1.0, self.total_experiences / EXPLORATION_DECAY_STEPS)
+        return EXPLORATION_MAX - decay * progress
+
+    # -- perception --------------------------------------------------------
+
+    def perceive(self, monster: Monster,
+                 engine: GameEngine) -> dict:
+        """Build rodent-appropriate perception of the world.
+
+        A rat perceives: danger visibility and distance, own health,
+        whether food is nearby and in which direction, and how many
+        escape routes exist (cells moving away from the player).
+        """
+        player = engine.player
+        board = engine.board
+
+        # Can I see the predator?
+        can_see: bool = board.line_of_sight(monster.pos, player.pos)
+
+        # Distance to predator (binned).
+        dist: float = monster.pos.distance(player.pos)
+        if dist <= DIST_ADJACENT:
+            dist_bin: str = "adjacent"
+        elif dist <= DIST_CLOSE:
+            dist_bin = "close"
+        elif dist <= DIST_MEDIUM:
+            dist_bin = "medium"
+        else:
+            dist_bin = "far"
+
+        # Own health (binned).
+        hp_ratio: float = monster.hp / monster.max_hp if monster.max_hp > 0 else 0.0
+        if hp_ratio > 0.75:
+            hp_bin: str = "healthy"
+        elif hp_ratio > 0.25:
+            hp_bin = "wounded"
+        else:
+            hp_bin = "critical"
+
+        # Food detection: find nearest food within sense radius.
+        food_nearby: bool = False
+        food_dr: int = 0
+        food_dc: int = 0
+        best_food_dist: float = RAT_FOOD_SENSE_RADIUS + 1
+        from game.items import ItemType
+        for coord, items in board.goodies.items():
+            for item in items:
+                if item.type == ItemType.FOOD:
+                    fd: float = monster.pos.distance(coord)
+                    if fd < best_food_dist:
+                        best_food_dist = fd
+                        food_nearby = True
+                        food_dr = ((coord.r > monster.pos.r)
+                                   - (coord.r < monster.pos.r))
+                        food_dc = ((coord.c > monster.pos.c)
+                                   - (coord.c < monster.pos.c))
+                    break  # One food item per cell is enough.
+
+        # Escape routes: adjacent navigable cells that increase distance
+        # from the player.
+        escape_count: int = 0
+        for direction in Direction:
+            if direction == Direction.NONE:
+                continue
+            dr, dc = DIRECTION_DELTA[direction]
+            nr: int = monster.pos.r + dr
+            nc: int = monster.pos.c + dc
+            if not (0 <= nr < BOARD_ROWS and 0 <= nc < BOARD_COLUMNS):
+                continue
+            target: Coordinate = Coordinate(nr, nc)
+            if target == player.pos:
+                continue
+            if (board.is_navigable(target)
+                    and board.get_monster_at(target) is None):
+                new_dist: float = target.distance(player.pos)
+                if new_dist > dist:
+                    escape_count += 1
+
+        if escape_count == 0:
+            escape_bin: str = "cornered"
+        elif escape_count <= 2:
+            escape_bin = "few"
+        else:
+            escape_bin = "many"
+
+        return {
+            "can_see_prey": can_see,
+            "prey_distance": dist_bin,
+            "hp": hp_bin,
+            "food_nearby": food_nearby,
+            "food_dir": (food_dr, food_dc),
+            "escape": escape_bin,
+        }
+
+    def _state_key(self, perception: dict) -> str:
+        """Discretize perception into a Q-table key."""
+        base: str = (
+            f"see={perception['can_see_prey']}"
+            f"|dist={perception['prey_distance']}"
+            f"|hp={perception['hp']}"
+            f"|food={perception['food_nearby']}"
+            f"|esc={perception['escape']}"
+        )
+        if perception["food_nearby"]:
+            fdr, fdc = perception["food_dir"]
+            base += f"|fdir=({fdr},{fdc})"
+        return base
+
+    # -- action selection --------------------------------------------------
+
+    def choose_action(self, monster: Monster,
+                      engine: GameEngine) -> tuple[Action, dict]:
+        """Decide what this rat should do this turn."""
+        perception: dict = self.perceive(monster, engine)
+        state: str = self._state_key(perception)
+        monster.last_state_key = state
+
+        actions: list[Action] = self._available_actions(monster, engine)
+        if not actions:
+            return Action.WAIT, {}
+
+        if _random.random() < self.exploration_rate:
+            chosen: Action = _random.choice(actions)
+        else:
+            chosen = self._best_action(state, actions)
+
+        return chosen, {}
+
+    def _best_action(self, state: str,
+                     actions: list[Action]) -> Action:
+        """Pick the action with the highest average reward."""
+        q_state: dict = self.q_table.get(state, {})
+        best_val: float = float("-inf")
+        best_action: Action = actions[0]
+        for a in actions:
+            a_key: str = str(int(a))
+            entry: dict = q_state.get(a_key, {"total": 0.0, "count": 0})
+            val: float = entry["total"] / entry["count"] if entry["count"] > 0 else 0.0
+            if val > best_val:
+                best_val = val
+                best_action = a
+        return best_action
+
+    def _available_actions(self, monster: Monster,
+                           engine: GameEngine) -> list[Action]:
+        """Actions a rat can take.
+
+        Rats can move in 8 directions (or attack the player if
+        adjacent — cornered bite) or wait.  They cannot open doors,
+        pick up items, or use stairs.
+        """
+        actions: list[Action] = [Action.WAIT]
+        for direction in Direction:
+            if direction == Direction.NONE:
+                continue
+            dr, dc = DIRECTION_DELTA[direction]
+            nr: int = monster.pos.r + dr
+            nc: int = monster.pos.c + dc
+            if not (0 <= nr < BOARD_ROWS and 0 <= nc < BOARD_COLUMNS):
+                continue
+            target: Coordinate = Coordinate(nr, nc)
+            if target == engine.player.pos:
+                actions.append(DIRECTION_TO_ACTION[direction])
+                continue
+            if (engine.board.is_navigable(target)
+                    and engine.board.get_monster_at(target) is None):
+                actions.append(DIRECTION_TO_ACTION[direction])
+        return actions
+
+    # -- learning ----------------------------------------------------------
+
+    def record_outcome(self, monster: Monster, action: Action,
+                       reward: float, engine: GameEngine) -> None:
+        """Record reward for the (state, action) pair."""
+        state: str = (monster.last_state_key
+                      or self._state_key(self.perceive(monster, engine)))
+        a_key: str = str(int(action))
+        q_state: dict = self.q_table.setdefault(state, {})
+        entry: dict = q_state.setdefault(
+            a_key, {"total": 0.0, "count": 0}
+        )
+        entry["total"] += reward
+        entry["count"] += 1
+        self.total_experiences += 1
+
+    # -- persistence -------------------------------------------------------
+
+    def save(self, path: str) -> None:
+        """Write brain state to JSON."""
+        data: dict = {
+            "q_table": self.q_table,
+            "total_experiences": self.total_experiences,
+        }
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+
+    @classmethod
+    def load(cls, path: str) -> RatBrain:
+        """Load brain state from JSON, or create fresh if not found."""
+        brain: RatBrain = cls()
+        if not os.path.exists(path):
+            return brain
+        try:
+            with open(path, "r") as f:
+                data: dict = json.load(f)
+            brain.q_table = data.get("q_table", {})
+            brain.total_experiences = data.get("total_experiences", 0)
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            logger.debug("Failed to load rat brain from %s: %s", path, exc)
         return brain

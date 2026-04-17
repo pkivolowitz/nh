@@ -300,4 +300,5 @@ def initialize_corner_map() -> None:
     m["VFFHVFHHF"] = CH_URCORNER
     m["HVFHHFVFF"] = CH_LRCORNER
     m[" HV HH VF"] = CH_ULCORNER
+    m["HVF HH  H"] = CH_LLCORNER
     # fmt: on

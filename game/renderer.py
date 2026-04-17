@@ -18,7 +18,6 @@ from game.constants import (
     BOARD_COLUMNS,
     BOARD_ROWS,
     BOARD_TOP_OFFSET,
-    BOARD_STATUS_OFFSET,
     BOARD_IDENTITY_ROW,
     BOARD_MESSAGE_ROW,
     MIN_TERMINAL_COLS,
@@ -83,6 +82,8 @@ class Renderer:
     def __init__(self) -> None:
         self.map_win: Optional[curses.window] = None
         self.sidebar_win: Optional[curses.window] = None
+        self.status_win: Optional[curses.window] = None
+        self.status_cols: int = 0
         self.sidebar_rows: int = 0
         self.sidebar_cols: int = 0
         self.show_original: bool = False
@@ -120,11 +121,18 @@ class Renderer:
                 f"wide (currently {term_cols})."
             )
 
-        map_rows = BOARD_TOP_OFFSET + BOARD_ROWS + 2
+        map_rows = BOARD_TOP_OFFSET + BOARD_ROWS
         map_cols = BOARD_COLUMNS
         self.map_win = curses.newwin(map_rows, map_cols, 0, 0)
         self.map_win.keypad(True)
         self.map_win.timeout(50)
+
+        # Status window spans the full terminal width below the map.
+        status_top = map_rows
+        self.status_cols = term_cols
+        self.status_win = curses.newwin(
+            2, self.status_cols, status_top, 0,
+        )
 
         self.sidebar_cols = term_cols - map_cols - SIDEBAR_GAP
         self.sidebar_rows = map_rows
@@ -140,7 +148,7 @@ class Renderer:
     def draw(self, board: Board, player: Player,
              current_level: int, turn: int) -> None:
         """Render the complete frame: identity, map, monsters, player, status."""
-        assert self.map_win is not None and self.sidebar_win is not None
+        assert self.map_win is not None and self.sidebar_win is not None and self.status_win is not None
         # Clear memories when the player changes level.
         if current_level != self._last_level:
             self._remembered_monsters.clear()
@@ -153,9 +161,10 @@ class Renderer:
         # Identity goes after _draw_board (which calls erase()) so it
         # isn't wiped along with the previous frame.
         self._draw_identity(player)
-        self._draw_status(board, player, current_level)
         self._draw_time()
         self.map_win.noutrefresh()
+        self._draw_status(board, player, current_level, turn)
+        self.status_win.noutrefresh()
         self._draw_sidebar(player, current_level)
         self.sidebar_win.noutrefresh()
         curses.doupdate()
@@ -521,68 +530,53 @@ class Renderer:
         return f"{label:>{label_w}}:{cur:>{num_w}d}/{mx:>{num_w}d}"
 
     def _draw_status(self, board: Board, player: Player,
-                     current_level: int) -> None:
-        """Render the two status rows below the map.
-
-        Layout: 5 strict-aligned columns on each row.
+                     current_level: int, turn: int) -> None:
+        """Render the two status rows in the full-width status window.
 
         Row 1 (volatile / game state):
-            HLTH:cur/max  CNC:cur/max  LVL:cur/max  EXP:current   Dlvl:N
+            HLTH  CNC  LVL  EXP  Dlvl  Turn
         Row 2 (attributes / inventory):
-            INT:cur/max   CON:cur/max  DEX:cur/max  Items:N/52    Wt:N
-
-        Both rows use identical column widths so the labels and values
-        line up exactly underneath each other.
+            STR  INT  CON  DEX  Items  Wt/Max
         """
-        win = self.map_win
+        win = self.status_win
         assert win is not None
+        win.erase()
         attr = curses.color_pair(CLR_EMPTY)
 
         cur = player.current_traits
         mx = player.maximum_traits
+        fmt = self._fmt_stat_col
 
-        # Column widths chosen so labels right-align and values fit
-        # the largest expected magnitude.  Both rows must use the
-        # same width per column to keep strict alignment.
-        # Col 1-3: 4-char label + ":" + 3-digit cur + "/" + 3-digit max = 12
-        c1_top: str = self._fmt_stat_col(
-            "HLTH", cur[Trait.HEALTH], mx[Trait.HEALTH], 4, 3
-        )
-        c1_bot: str = self._fmt_stat_col(
-            "INT", cur[Trait.INTELLIGENCE], mx[Trait.INTELLIGENCE], 4, 3
-        )
+        # Row 1: health, concentration, level, exp, dungeon level, turn.
+        r1_parts: list[str] = [
+            fmt("HLTH", cur[Trait.HEALTH], mx[Trait.HEALTH], 4, 3),
+            fmt("CNC", cur[Trait.CONCENTRATION], mx[Trait.CONCENTRATION], 4, 3),
+            fmt("LVL", cur[Trait.LEVEL], mx[Trait.LEVEL], 4, 3),
+            f"{'EXP':>4}:{cur[Trait.EXPERIENCE]:>6d}",
+            f"Dlvl:{current_level:>4d}",
+            f"Turn:{turn:>6d}",
+        ]
 
-        c2_top: str = self._fmt_stat_col(
-            "CNC", cur[Trait.CONCENTRATION], mx[Trait.CONCENTRATION], 4, 3
-        )
-        c2_bot: str = self._fmt_stat_col(
-            "CON", cur[Trait.CONSTITUTION], mx[Trait.CONSTITUTION], 4, 3
-        )
-
-        c3_top: str = self._fmt_stat_col(
-            "LVL", cur[Trait.LEVEL], mx[Trait.LEVEL], 4, 3
-        )
-        c3_bot: str = self._fmt_stat_col(
-            "DEX", cur[Trait.DEXTERITY], mx[Trait.DEXTERITY], 4, 3
-        )
-
-        # Col 4: 4-char label + ":" + 6-digit value(s) -- top row shows
-        # current EXP only (no max).  Both cells are 11 chars wide.
-        c4_top: str = f"{'EXP':>4}:{cur[Trait.EXPERIENCE]:>6d}"
-        c4_bot: str = f"Items:{player.inventory_count():>2d}/{MAX_INVENTORY_SLOTS:>2d}"
-
-        # Col 5: dungeon level / total inventory weight.  9 chars wide.
-        c5_top: str = f"Dlvl:{current_level:>4d}"
-        c5_bot: str = f"  Wt:{player.weight_of_inventory():>4d}"
+        # Row 2: str, int, con, dex, items, weight/max.
+        carry_wt: int = player.weight_of_inventory()
+        max_wt: int = player.max_carry_weight()
+        r2_parts: list[str] = [
+            fmt("STR", cur[Trait.STRENGTH], mx[Trait.STRENGTH], 4, 3),
+            fmt("INT", cur[Trait.INTELLIGENCE], mx[Trait.INTELLIGENCE], 4, 3),
+            fmt("CON", cur[Trait.CONSTITUTION], mx[Trait.CONSTITUTION], 4, 3),
+            fmt("DEX", cur[Trait.DEXTERITY], mx[Trait.DEXTERITY], 4, 3),
+            f"Items:{player.inventory_count():>2d}/{MAX_INVENTORY_SLOTS:>2d}",
+            f"Wt:{carry_wt:>4d}/{max_wt:>4d}",
+        ]
 
         sep: str = "  "
-        row_top: str = sep.join([c1_top, c2_top, c3_top, c4_top, c5_top])
-        row_bot: str = sep.join([c1_bot, c2_bot, c3_bot, c4_bot, c5_bot])
+        row_top: str = sep.join(r1_parts)
+        row_bot: str = sep.join(r2_parts)
 
         win.attron(attr)
         try:
-            win.addstr(BOARD_STATUS_OFFSET, 0, row_top)
-            win.addstr(BOARD_STATUS_OFFSET + 1, 0, row_bot)
+            win.addstr(0, 0, row_top)
+            win.addstr(1, 0, row_bot)
         except curses.error:
             pass
         win.attroff(attr)
@@ -826,3 +820,115 @@ class Renderer:
         ch = self.map_win.getch()
         self.map_win.timeout(50)
         return ch
+
+    # ------------------------------------------------------------------
+    # Cursor targeting
+    # ------------------------------------------------------------------
+
+    # vi-key → (dr, dc) for cursor movement.
+    _CURSOR_KEYS: dict[int, tuple[int, int]] = {
+        ord("k"): (-1, 0), ord("j"): (1, 0),
+        ord("l"): (0, 1),  ord("h"): (0, -1),
+        ord("u"): (-1, 1), ord("y"): (-1, -1),
+        ord("n"): (1, 1),  ord("b"): (1, -1),
+        curses.KEY_UP: (-1, 0), curses.KEY_DOWN: (1, 0),
+        curses.KEY_RIGHT: (0, 1), curses.KEY_LEFT: (0, -1),
+    }
+
+    def select_target(self, board: Board,
+                      player_pos: Coordinate) -> Optional[Coordinate]:
+        """Let the player move a cursor to choose a target cell.
+
+        The cursor starts at the player's position.  Movement keys
+        advance one cell at a time.  The cursor can move freely
+        anywhere on the board — no LOS restriction, so it doesn't
+        reveal wall positions in the dark.  The spell itself handles
+        wall collision at cast time.
+
+        Confirm with '.' or Enter.  Cancel with Escape.
+
+        Returns the selected Coordinate, or None if cancelled.
+        """
+        win = self.map_win
+        assert win is not None
+
+        cr: int = player_pos.r
+        cc: int = player_pos.c
+        old_timeout = 50
+        win.timeout(-1)  # Blocking while targeting.
+
+        try:
+            while True:
+                # Draw cursor — bright reverse-video 'X'.
+                screen_r: int = BOARD_TOP_OFFSET + cr
+                attr = curses.A_REVERSE | curses.A_BOLD
+                win.attron(attr)
+                try:
+                    win.addch(screen_r, cc, ord("X"))
+                except curses.error:
+                    pass
+                win.attroff(attr)
+                win.noutrefresh()
+                curses.doupdate()
+
+                ch: int = win.getch()
+
+                if ch == 27:  # Escape — cancel.
+                    return None
+
+                if ch in (ord("."), ord("\n"), ord("\r")):
+                    return Coordinate(cr, cc)
+
+                move = self._CURSOR_KEYS.get(ch)
+                if move is None:
+                    continue
+
+                nr: int = cr + move[0]
+                nc: int = cc + move[1]
+
+                # Stay in bounds.
+                if not (0 <= nr < BOARD_ROWS and 0 <= nc < BOARD_COLUMNS):
+                    continue
+
+                # Erase old cursor position by restoring what was there.
+                self._restore_cell(board, cr, cc, player_pos)
+
+                cr, cc = nr, nc
+        finally:
+            win.timeout(old_timeout)
+            # Restore the cell under the final cursor position.
+            self._restore_cell(board, cr, cc, player_pos)
+
+    def _restore_cell(self, board: Board, r: int, c: int,
+                      player_pos: Coordinate) -> None:
+        """Redraw a single cell to erase a targeting cursor overlay."""
+        win = self.map_win
+        assert win is not None
+        screen_r: int = BOARD_TOP_OFFSET + r
+
+        if r == player_pos.r and c == player_pos.c:
+            attr = curses.color_pair(CLR_PLAYER) | curses.A_BOLD
+            win.attron(attr)
+            try:
+                win.addch(screen_r, c, ord("@"))
+            except curses.error:
+                pass
+            win.attroff(attr)
+            return
+
+        # Check for a monster.
+        coord = Coordinate(r, c)
+        monster = board.get_monster_at(coord)
+        if monster is not None and (r, c) in self._visible_cells:
+            attr = curses.color_pair(monster.color_pair)
+            win.attron(attr)
+            try:
+                win.addch(screen_r, c, monster.symbol)
+            except curses.error:
+                pass
+            win.attroff(attr)
+            return
+
+        # Fall back to the cell display.
+        cell = board.cells[r][c]
+        self._show_cell(board, coord, cell)

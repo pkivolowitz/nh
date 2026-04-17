@@ -118,7 +118,8 @@ class Monster(Creature):
 
 def _build_species_registry() -> dict[str, MonsterSpecies]:
     """Construct the master catalog of all monster species."""
-    from game.brain import JackalBrain
+    from game.brain import JackalBrain, RatBrain
+    from game.colors import CLR_GRAY
 
     registry: dict[str, MonsterSpecies] = {}
 
@@ -145,6 +146,30 @@ def _build_species_registry() -> dict[str, MonsterSpecies]:
         brain_class=JackalBrain,
         move_noise=4,
         noise_description="soft padding of paws",
+    )
+
+    # Rat -- cowardly scavenger.  Flees the player, seeks food on the
+    # floor.  Only bites when cornered.  Individually weak (1-3 HP,
+    # 1d3 bite), spawns solo or in pairs.  Symbol 'r', gray.
+    registry["rat"] = MonsterSpecies(
+        name="rat",
+        symbol=ord("r"),
+        color_pair=CLR_GRAY,
+        speed=10,
+        hp_dice=1,
+        hp_sides=3,
+        ac=9,
+        base_level=0,
+        attacks=[BumpAttack(dice=1, sides=3, verb="bites")],
+        flags={"hostile", "animal", "nohands", "omnivore"},
+        spawn_group_min=1,
+        spawn_group_max=2,
+        min_depth=1,
+        max_depth=4,
+        frequency=4,
+        brain_class=RatBrain,
+        move_noise=2,
+        noise_description="faint scratching",
     )
 
     return registry

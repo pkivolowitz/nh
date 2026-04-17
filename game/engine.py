@@ -133,7 +133,9 @@ class GameEngine:
              direction: Direction = Direction.NONE,
              letter: str = "",
              running: bool = False,
-             school: Optional[MagicSchool] = None) -> StepResult:
+             school: Optional[MagicSchool] = None,
+             target_pos: Optional[Coordinate] = None,
+             spell_radius: int = -1) -> StepResult:
         """Execute *action* and return the result.
 
         After the player acts, all monsters on the level accumulate
@@ -169,7 +171,9 @@ class GameEngine:
         elif action == Action.KICK_DOOR:
             result = self._handle_kick(direction)
         elif action == Action.CAST:
-            result = self._handle_cast(school, direction)
+            result = self._handle_cast(school, direction,
+                                       target_pos=target_pos,
+                                       spell_radius=spell_radius)
         elif action == Action.READ:
             result = self._handle_read(letter)
         else:
@@ -278,14 +282,15 @@ class GameEngine:
         noise_level: int = NOISE_RUN if running else NOISE_WALK
         self.board.emit_noise(self.player.pos, noise_level)
 
-        # Report items on the floor.
-        sym = self.board.get_symbol(target)
+        # Report items on the floor by name.
         msg = ""
-        if sym >= 0:
-            gc = self.board.get_goodie_count(target)
-            noun = "items" if gc > 1 else "item"
-            verb = "are" if gc > 1 else "is"
-            msg = f"There {verb} {gc} {noun} here."
+        items_here = self.board.goodies.get(target, [])
+        if items_here:
+            descs = [it.describe() for it in items_here]
+            if len(descs) == 1:
+                msg = f"You see here {descs[0]}."
+            else:
+                msg = "You see here: " + ", ".join(descs) + "."
 
         return StepResult(message=msg, turn_used=True)
 
@@ -301,7 +306,8 @@ class GameEngine:
         combat is loud and emits noise from the player's position.
         """
         result: CombatResult = _PLAYER_UNARMED.execute(
-            self.player, monster, self.rng
+            self.player, monster, self.rng,
+            damage_bonus=self.player.melee_damage_bonus(),
         )
         self.turn_counter += 1
         self.board.emit_noise(self.player.pos, NOISE_MELEE)
@@ -411,23 +417,30 @@ class GameEngine:
         # Move to navigable, unoccupied cell.
         if (self.board.is_navigable(target)
                 and self.board.get_monster_at(target) is None):
-            # Shaping reward based on movement relative to prey.
-            can_see: bool = self.board.line_of_sight(
-                monster.pos, self.player.pos
-            )
-            if can_see:
-                old_dist: float = monster.pos.distance(self.player.pos)
-                new_dist: float = target.distance(self.player.pos)
-                reward: float = (REWARD_MOVE_TOWARD_PREY if new_dist < old_dist
-                                 else REWARD_MOVE_AWAY_PREY)
+            old_dist: float = monster.pos.distance(self.player.pos)
+            new_dist: float = target.distance(self.player.pos)
+
+            # Species-appropriate shaping reward.
+            from game.brain import RatBrain
+            if isinstance(brain, RatBrain):
+                reward = self._rat_move_reward(
+                    monster, target, old_dist, new_dist
+                )
             else:
-                reward = 0.0
+                # Predator brain (jackal): closing distance is good.
+                can_see: bool = self.board.line_of_sight(
+                    monster.pos, self.player.pos
+                )
+                if can_see:
+                    reward: float = (REWARD_MOVE_TOWARD_PREY
+                                     if new_dist < old_dist
+                                     else REWARD_MOVE_AWAY_PREY)
+                else:
+                    reward = 0.0
 
             self.board.move_monster(monster, target)
 
-            # Monsters emit noise from their new position.  The
-            # player's get_player_hear_messages picks this up and
-            # produces "You hear a soft padding of paws..." messages.
+            # Monsters emit noise from their new position.
             self.board.emit_noise(
                 monster.pos,
                 monster.species.move_noise,
@@ -441,6 +454,49 @@ class GameEngine:
         # Blocked by terrain or another monster.
         brain.record_outcome(monster, action, REWARD_FAILED_MOVE, self)
         return None
+
+    def _rat_move_reward(self, monster: Monster, target: Coordinate,
+                         old_dist: float, new_dist: float) -> float:
+        """Compute shaping reward for a rat's movement.
+
+        Rats are rewarded for fleeing the player and moving toward
+        food.  Getting closer to the player is punished.
+        """
+        from game.brain import (
+            REWARD_RAT_FLEE, REWARD_RAT_APPROACH_PREY,
+            REWARD_RAT_FOOD_CLOSER, REWARD_RAT_ON_FOOD,
+            RAT_FOOD_SENSE_RADIUS,
+        )
+        from game.items import ItemType
+
+        reward: float = 0.0
+
+        # Flee/approach player.
+        if new_dist > old_dist:
+            reward += REWARD_RAT_FLEE
+        elif new_dist < old_dist:
+            reward += REWARD_RAT_APPROACH_PREY
+
+        # Food proximity reward.
+        best_food_dist_old: float = RAT_FOOD_SENSE_RADIUS + 1
+        best_food_dist_new: float = RAT_FOOD_SENSE_RADIUS + 1
+        for coord, items in self.board.goodies.items():
+            for item in items:
+                if item.type == ItemType.FOOD:
+                    d_old: float = monster.pos.distance(coord)
+                    d_new: float = target.distance(coord)
+                    if d_old < best_food_dist_old:
+                        best_food_dist_old = d_old
+                    if d_new < best_food_dist_new:
+                        best_food_dist_new = d_new
+                    break
+
+        if best_food_dist_new < best_food_dist_old:
+            reward += REWARD_RAT_FOOD_CLOSER
+        if best_food_dist_new <= 0.01:
+            reward += REWARD_RAT_ON_FOOD
+
+        return reward
 
     # ------------------------------------------------------------------
     # Stairs
@@ -490,9 +546,16 @@ class GameEngine:
 
         picked_up = 0
         full = False
+        too_heavy = False
         reward = 0.0
+        max_wt: int = self.player.max_carry_weight()
         for item in items:
-            if full:
+            if full or too_heavy:
+                self.board.add_goodie(self.player.pos, item)
+                continue
+            # Check weight before adding.
+            if self.player.weight_of_inventory() + item.weight() > max_wt:
+                too_heavy = True
                 self.board.add_goodie(self.player.pos, item)
                 continue
             letter = self.player.add_to_inventory(item)
@@ -506,7 +569,9 @@ class GameEngine:
         if picked_up > 0:
             self.turn_counter += 1
 
-        if full:
+        if too_heavy:
+            msg = "That's too heavy for you to carry."
+        elif full:
             msg = "Your pack cannot hold any more."
         else:
             noun = "items" if picked_up > 1 else "item"
@@ -571,7 +636,9 @@ class GameEngine:
             return StepResult(message="Kick in what direction?")
         dr, dc = DIRECTION_DELTA[direction]
         target = Coordinate(self.player.pos.r + dr, self.player.pos.c + dc)
-        msg, noise_desc, noise_level = self.board.try_kick_door(target)
+        msg, noise_desc, noise_level = self.board.try_kick_door(
+            target, kick_bonus=self.player.kick_bonus(),
+        )
         self.turn_counter += 1
         if noise_level > 0:
             self.board.emit_noise(
@@ -624,9 +691,14 @@ class GameEngine:
     # ------------------------------------------------------------------
 
     def _handle_cast(self, school: Optional[MagicSchool],
-                     direction: Direction) -> StepResult:
-        """Cast a spell from *school* in *direction*.
+                     direction: Direction, *,
+                     target_pos: Optional[Coordinate] = None,
+                     spell_radius: int = -1) -> StepResult:
+        """Cast a spell from *school*.
 
+        *target_pos* is the player-selected target cell (from cursor
+        targeting).  *spell_radius* is the chosen blast size (0=small,
+        1=medium, 2=large) or -1 for "no choice" (tier-dependent).
         Checks concentration, rolls outcome, delegates to the
         school-specific resolver, applies self-damage and noise.
         """
@@ -656,7 +728,8 @@ class GameEngine:
         from game.spells_fire import resolve_fire
         if school == MagicSchool.FIRE:
             cast_result: CastResult = resolve_fire(
-                self, direction, tier, outcome, self.rng
+                self, direction, tier, outcome, self.rng,
+                target_pos=target_pos, chosen_radius=spell_radius,
             )
         else:
             # Placeholder for unimplemented schools.
