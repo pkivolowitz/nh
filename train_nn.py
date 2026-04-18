@@ -29,7 +29,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from game.nn_features import NUM_ACTIONS, get_extractor
+from game.nn_features import (
+    NUM_ACTIONS, get_extractor,
+    GRID_SIDE, GRID_CHANNELS, GRID_DIM,
+)
 
 
 DEFAULT_MODEL_DIR: str = "~/.pnh/models"
@@ -40,7 +43,8 @@ class QMLP(nn.Module):
 
     Small enough to run in microseconds on CPU but expressive enough
     to generalize across perception bins that tabular Q-tables must
-    treat as unrelated.
+    treat as unrelated.  Does not exploit the spatial structure of
+    the 7x7 local grid — if the grid matters, use ``QGridCNN``.
     """
 
     def __init__(self, in_dim: int, hidden: int = 64,
@@ -56,6 +60,79 @@ class QMLP(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
+
+
+class QGridCNN(nn.Module):
+    """Dual-head network: CNN over the 7x7 spatial grid + MLP over scalars.
+
+    The feature vector layout is fixed by the extractors:
+        [0:scalar_dim]                  scalar perception
+        [scalar_dim:scalar_dim+GRID_DIM] flattened 7x7x8 one-hot grid
+
+    The grid branch learns convolutional filters with translation
+    invariance — "wall to the N" and "wall to the S" share weights —
+    which the flat-MLP cannot.  Outputs of both branches are
+    concatenated and fed to a shared head that produces Q-values.
+    """
+
+    def __init__(self, in_dim: int, scalar_dim: int,
+                 conv_channels: tuple[int, int] = (16, 32),
+                 scalar_hidden: int = 64,
+                 head_hidden: int = 128,
+                 out_dim: int = NUM_ACTIONS) -> None:
+        super().__init__()
+        assert in_dim == scalar_dim + GRID_DIM, (
+            f"QGridCNN expects in_dim = scalar_dim + GRID_DIM, got "
+            f"{in_dim} != {scalar_dim} + {GRID_DIM}"
+        )
+        self.scalar_dim = scalar_dim
+
+        self.scalar_mlp = nn.Sequential(
+            nn.Linear(scalar_dim, scalar_hidden),
+            nn.ReLU(),
+        )
+
+        c1, c2 = conv_channels
+        self.conv = nn.Sequential(
+            nn.Conv2d(GRID_CHANNELS, c1, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(c1, c2, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
+        conv_flat = c2 * GRID_SIDE * GRID_SIDE
+
+        self.head = nn.Sequential(
+            nn.Linear(scalar_hidden + conv_flat, head_hidden),
+            nn.ReLU(),
+            nn.Linear(head_hidden, out_dim),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Split.
+        scalar = x[:, :self.scalar_dim]
+        grid = x[:, self.scalar_dim:]
+        # (batch, GRID_DIM) → (batch, GRID_SIDE, GRID_SIDE, GRID_CHANNELS)
+        #                  → (batch, GRID_CHANNELS, GRID_SIDE, GRID_SIDE)
+        batch = x.size(0)
+        grid = grid.view(batch, GRID_SIDE, GRID_SIDE, GRID_CHANNELS)
+        grid = grid.permute(0, 3, 1, 2).contiguous()
+
+        scalar_feat = self.scalar_mlp(scalar)
+        conv_feat = self.conv(grid).flatten(start_dim=1)
+        combined = torch.cat([scalar_feat, conv_feat], dim=1)
+        return self.head(combined)
+
+
+def build_qnet(arch: str, feat_dim: int, scalar_dim: int,
+               hidden: int) -> nn.Module:
+    """Construct the Q-network specified by *arch*."""
+    if arch == "mlp":
+        return QMLP(feat_dim, hidden=hidden)
+    if arch == "cnn":
+        return QGridCNN(feat_dim, scalar_dim=scalar_dim,
+                        scalar_hidden=hidden // 2,
+                        head_hidden=hidden)
+    raise ValueError(f"unknown arch {arch!r}")
 
 
 def load_trajectories(paths: list[str],
@@ -194,6 +271,7 @@ def train_species(species: str, data: dict[str, np.ndarray], *,
                   epochs: int, batch_size: int, lr: float,
                   gamma: float, target_sync_steps: int,
                   hidden: int, model_dir: str, device: str,
+                  arch: str = "mlp",
                   double_dqn: bool = True,
                   reward_clip: float = 2.0) -> str:
     """Fit a Q-network on *data* and export to ONNX.  Returns model path.
@@ -202,9 +280,13 @@ def train_species(species: str, data: dict[str, np.ndarray], *,
     net evaluates it) to curb the overestimation that makes vanilla
     DQN unstable on long runs.  Rewards are clipped to ±reward_clip to
     keep the bootstrap target from blowing up on occasional outliers.
+    ``arch`` chooses the Q-network topology: ``"mlp"`` is a flat MLP
+    over the whole feature vector; ``"cnn"`` splits scalar + grid and
+    puts a Conv2d stack on the spatial branch.
     """
     extractor = get_extractor(species)
     feat_dim = extractor.feature_dim
+    scalar_dim = extractor.SCALAR_DIM
     assert data["s"].shape[1] == feat_dim, (
         f"{species} features have dim {data['s'].shape[1]}, "
         f"extractor expects {feat_dim}"
@@ -218,7 +300,7 @@ def train_species(species: str, data: dict[str, np.ndarray], *,
     above_clip = float((np.abs(r_arr) > reward_clip).mean())
     print(
         f"[{species}] training on {n:,} transitions "
-        f"(dim={feat_dim}, hidden={hidden}, epochs={epochs}, "
+        f"(dim={feat_dim}, arch={arch}, hidden={hidden}, epochs={epochs}, "
         f"double_dqn={double_dqn}, clip=±{reward_clip})"
     )
     print(
@@ -226,10 +308,12 @@ def train_species(species: str, data: dict[str, np.ndarray], *,
         f"mean={r_mean:.3f} |r|>clip={above_clip:.2%}"
     )
 
-    model = QMLP(feat_dim, hidden=hidden).to(device)
-    target = QMLP(feat_dim, hidden=hidden).to(device)
+    model = build_qnet(arch, feat_dim, scalar_dim, hidden).to(device)
+    target = build_qnet(arch, feat_dim, scalar_dim, hidden).to(device)
     target.load_state_dict(model.state_dict())
     target.eval()
+    param_count = sum(p.numel() for p in model.parameters())
+    print(f"[{species}] params={param_count:,}")
     opt = torch.optim.Adam(model.parameters(), lr=lr)
 
     s_all = torch.from_numpy(data["s"]).to(device)
@@ -363,6 +447,9 @@ def main() -> None:
     p.add_argument("--no-double-dqn", dest="double_dqn",
                    action="store_false",
                    help="Disable Double DQN (revert to vanilla)")
+    p.add_argument("--arch", choices=["mlp", "cnn"], default="mlp",
+                   help="Q-network architecture: flat MLP or dual-head "
+                        "CNN+MLP over the spatial grid")
     p.add_argument("--model-dir", type=str, default=DEFAULT_MODEL_DIR)
     p.add_argument("--device", type=str, default=None,
                    help="torch device; auto-select if omitted")
@@ -402,6 +489,7 @@ def main() -> None:
             hidden=args.hidden,
             model_dir=args.model_dir,
             device=device,
+            arch=args.arch,
             double_dqn=args.double_dqn,
             reward_clip=args.reward_clip,
         )
