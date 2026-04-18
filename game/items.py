@@ -20,6 +20,7 @@ class ItemType(IntEnum):
     SCROLL = auto()
     SPELLBOOK = auto()
     FOOD = auto()
+    ROCK = auto()
 
 
 def letter_to_index(c: str) -> int:
@@ -134,3 +135,26 @@ class Food(BaseItem):
         """Food of the same kind stacks."""
         return (isinstance(other, Food)
                 and other.food_name == self.food_name)
+
+
+class Rock(BaseItem):
+    """A throwable rock.
+
+    Dungeon-floor detritus that doubles as the player's cheap ranged
+    weapon.  Stacks; weighs 1 per rock; deals 1d3 on impact when
+    thrown.  A thrown rock lands on the cell where it stops, so a
+    supply can be recovered after a fight.
+    """
+
+    __slots__ = ()
+
+    def __init__(self, count: int = 1) -> None:
+        super().__init__()
+        self.type = ItemType.ROCK
+        self.symbol = ord("*")
+        self.weight_per_item = 1
+        self.number_of_like_items = count
+        self.item_name = "rock"
+
+    def can_stack_with(self, other: BaseItem) -> bool:
+        return isinstance(other, Rock)

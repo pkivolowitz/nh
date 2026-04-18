@@ -62,6 +62,8 @@ from game.brain import (
     REWARD_MOVE_AWAY_PREY,
     REWARD_FAILED_MOVE,
     REWARD_WAIT,
+    REWARD_DESCEND_STAIRS,
+    REWARD_PER_TURN_ALIVE,
 )
 from game.monster import Monster
 
@@ -176,6 +178,10 @@ class GameEngine:
                                        spell_radius=spell_radius)
         elif action == Action.READ:
             result = self._handle_read(letter)
+        elif action == Action.THROW_ROCK:
+            result = self._handle_throw_rock(direction, target_pos=target_pos)
+        elif action == Action.EAT:
+            result = self._handle_eat(letter)
         else:
             result = StepResult(message="Unknown action.")
 
@@ -228,12 +234,17 @@ class GameEngine:
         if result.turn_used and self.player.is_alive:
             self._try_natural_heal()
             self._try_conc_regen()
+            # Survival pressure: a tiny per-turn negative nudges the
+            # agent toward finishing levels rather than stalling.
+            result.reward += REWARD_PER_TURN_ALIVE
 
         # Check for player death (monsters may have killed the player).
         if not self.player.is_alive:
             result.done = True
             if "die" not in result.message.lower():
                 result.message += " You die..."
+            # Strong negative signal: death is what we're trying to avoid.
+            result.reward += REWARD_DEATH
 
         # Update visibility from the player's new position so both
         # the renderer and headless agents see consistent is_known.
@@ -519,7 +530,9 @@ class GameEngine:
                 self.player.pos, level + 1
             )
             self._monsters_placed.add(level)
+        # Reward signal: descending is progress worth learning.
         return StepResult(message="You descend the staircase.",
+                          reward=REWARD_DESCEND_STAIRS,
                           turn_used=True)
 
     def _handle_stairs_up(self) -> StepResult:
@@ -592,6 +605,157 @@ class GameEngine:
         self.board.emit_noise(self.player.pos, NOISE_DROP)
         return StepResult(message=f"Dropped {item.item_name}.",
                           turn_used=True)
+
+    # ------------------------------------------------------------------
+    # Ranged attack: thrown rock
+    # ------------------------------------------------------------------
+
+    def _first_rock_slot(self) -> str:
+        """Inventory letter holding the first rock stack, '' if none."""
+        from game.items import ItemType, index_to_letter
+        for i, it in enumerate(self.player.inventory):
+            if it is not None and it.type == ItemType.ROCK:
+                return index_to_letter(i)
+        return ""
+
+    def _consume_one_rock(self) -> bool:
+        """Remove one rock from inventory; return True on success."""
+        from game.items import ItemType
+        for i, it in enumerate(self.player.inventory):
+            if it is not None and it.type == ItemType.ROCK:
+                if it.number_of_like_items > 1:
+                    it.number_of_like_items -= 1
+                else:
+                    self.player.inventory[i] = None
+                return True
+        return False
+
+    def _handle_throw_rock(self, direction: Direction,
+                           target_pos: Optional[Coordinate] = None
+                           ) -> StepResult:
+        """Throw a rock toward *target_pos* or along *direction*.
+
+        The rock travels one cell at a time.  It stops when it hits
+        a monster (damage), a wall or closed door (no damage), or
+        runs out of range (8 cells).  It always lands as an item on
+        the cell where it stopped.
+        """
+        from game.items import Rock
+        MAX_RANGE = 8
+        ROCK_DAMAGE_MIN = 1
+        ROCK_DAMAGE_SIDES = 3
+
+        if not self._first_rock_slot():
+            return StepResult(message="You have no rocks to throw.")
+
+        # Derive a travel vector: target_pos overrides direction.
+        if target_pos is not None:
+            dr_sign = (
+                1 if target_pos.r > self.player.pos.r
+                else -1 if target_pos.r < self.player.pos.r
+                else 0
+            )
+            dc_sign = (
+                1 if target_pos.c > self.player.pos.c
+                else -1 if target_pos.c < self.player.pos.c
+                else 0
+            )
+            if dr_sign == 0 and dc_sign == 0:
+                return StepResult(message="You can't throw a rock at yourself.")
+        else:
+            if direction == Direction.NONE:
+                return StepResult(message="Throw in what direction?")
+            dr_sign, dc_sign = DIRECTION_DELTA[direction]
+
+        # Walk the projectile one cell at a time.
+        cur_r, cur_c = self.player.pos.r, self.player.pos.c
+        landing: Coordinate = Coordinate(cur_r, cur_c)
+        hit_monster: Optional[Monster] = None
+        damage: int = 0
+        killed: bool = False
+        for _ in range(MAX_RANGE):
+            cur_r += dr_sign
+            cur_c += dc_sign
+            if not (0 <= cur_r < BOARD_ROWS and 0 <= cur_c < BOARD_COLUMNS):
+                break
+            cell = self.board.cells[cur_r][cur_c]
+            if cell.base_type == CellBaseType.WALL:
+                break  # Rock thuds off the wall on the *previous* cell.
+            if cell.base_type == CellBaseType.DOOR and cell.door_state in (
+                DoorState.DOOR_CLOSED,
+                DoorState.DOOR_LOCKED,
+                DoorState.DOOR_STUCK,
+            ):
+                break
+            landing = Coordinate(cur_r, cur_c)
+            mon = self.board.get_monster_at(landing)
+            if mon is not None and mon.is_alive:
+                hit_monster = mon
+                damage = self.rng.randint(ROCK_DAMAGE_MIN, ROCK_DAMAGE_SIDES)
+                mon.take_damage(damage)
+                killed = not mon.is_alive
+                break
+
+        self._consume_one_rock()
+        # Rock lands on the terminating cell, recoverable later.
+        self.board.add_goodie(landing, Rock(count=1))
+
+        self.turn_counter += 1
+        self.board.emit_noise(self.player.pos, NOISE_DROP)
+
+        reward: float = 0.0
+        if hit_monster is not None:
+            if killed:
+                reward = 2.0
+                self.board.remove_monster(hit_monster.pos)
+                msg = (f"The rock strikes the {hit_monster.name} — "
+                       f"it collapses! ({damage} damage)")
+            else:
+                reward = 0.5
+                msg = (f"The rock strikes the {hit_monster.name}. "
+                       f"({damage} damage)")
+        else:
+            msg = "The rock clatters to the floor."
+
+        return StepResult(message=msg, reward=reward, turn_used=True)
+
+    # ------------------------------------------------------------------
+    # Eating food
+    # ------------------------------------------------------------------
+
+    def _handle_eat(self, letter: str) -> StepResult:
+        """Consume a food item from inventory; restore a little HP."""
+        from game.items import ItemType, index_to_letter, letter_to_index
+
+        # If no letter given, find the first food item.
+        if not letter:
+            for i, it in enumerate(self.player.inventory):
+                if it is not None and it.type == ItemType.FOOD:
+                    letter = index_to_letter(i)
+                    break
+            if not letter:
+                return StepResult(message="You have nothing to eat.")
+
+        idx = letter_to_index(letter)
+        if idx < 0:
+            return StepResult(message="You don't have that.")
+        item = self.player.inventory[idx]
+        if item is None or item.type != ItemType.FOOD:
+            return StepResult(message="You can't eat that.")
+
+        # Consume one food; each restores 3-6 HP.
+        heal_amount: int = self.rng.randint(3, 6)
+        healed: int = self.player.heal(heal_amount)
+        if item.number_of_like_items > 1:
+            item.number_of_like_items -= 1
+        else:
+            self.player.inventory[idx] = None
+        self.turn_counter += 1
+        return StepResult(
+            message=f"You eat the {item.item_name}. (+{healed} HP)",
+            reward=0.3,
+            turn_used=True,
+        )
 
     # ------------------------------------------------------------------
     # Doors

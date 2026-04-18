@@ -307,7 +307,8 @@ class PlayerAction(IntEnum):
 
     Indices map 1:1 to network output positions.  The engine-level
     Action and its kwargs are reconstructed by ``decode_player_action``
-    — e.g. CAST_FIRE targets the nearest visible monster automatically.
+    — e.g. CAST_FIRE and THROW_ROCK auto-target the nearest visible
+    monster.  EAT auto-picks the first food item in inventory.
     """
 
     WAIT = 0
@@ -327,6 +328,8 @@ class PlayerAction(IntEnum):
     OPEN_E = 14
     OPEN_W = 15
     CAST_FIRE = 16
+    THROW_ROCK = 17
+    EAT = 18
 
 
 NUM_PLAYER_ACTIONS: int = len(PlayerAction)
@@ -377,9 +380,6 @@ def decode_player_action(pa: int, engine: GameEngine) -> tuple[Action, dict]:
     from game.magic import MagicSchool
     if pa == PlayerAction.CAST_FIRE:
         target = _nearest_visible_monster(engine)
-        # No visible target → fizzle in a direction (N) so the engine
-        # still processes the action; the NN shouldn't choose this
-        # when no target exists, but guard anyway.
         if target is None:
             return Action.CAST, {
                 "school": MagicSchool.FIRE, "direction": Direction.N,
@@ -387,6 +387,13 @@ def decode_player_action(pa: int, engine: GameEngine) -> tuple[Action, dict]:
         return Action.CAST, {
             "school": MagicSchool.FIRE, "target_pos": target,
         }
+    if pa == PlayerAction.THROW_ROCK:
+        target = _nearest_visible_monster(engine)
+        if target is None:
+            return Action.THROW_ROCK, {"direction": Direction.N}
+        return Action.THROW_ROCK, {"target_pos": target}
+    if pa == PlayerAction.EAT:
+        return Action.EAT, {}  # Letter-less: engine eats first food.
     action, direction = _PLAYER_ACTION_MAP[pa]
     kwargs: dict = {}
     if direction != Direction.NONE:
@@ -461,14 +468,24 @@ class PlayerFeatures:
     """Feature extractor for the player policy network.
 
     Layout:
-        scalar block (16 floats): HP / concentration / XP / level,
-            school-known flags (7), fire tier, weight ratio, item
-            count ratio, turn counter, visible-monster-count ratio.
+        scalar block (18 floats):
+          [0]    HP ratio
+          [1]    concentration ratio
+          [2]    XP normalized
+          [3]    level normalized
+          [4:11] 7 school known-flags
+          [11]   fire tier normalized
+          [12]   weight ratio
+          [13]   total item count ratio
+          [14]   turn normalized
+          [15]   visible monster count ratio
+          [16]   rock count normalized (/20)
+          [17]   food count normalized (/10)
         spatial block (15x15x11 floats): local one-hot grid.
     """
 
-    SCALAR_DIM: int = 16
-    feature_dim: int = 16 + PLAYER_GRID_DIM
+    SCALAR_DIM: int = 18
+    feature_dim: int = 18 + PLAYER_GRID_DIM
 
     def extract(self, player: Player, engine: GameEngine) -> np.ndarray:
         import numpy as _np
@@ -508,11 +525,26 @@ class PlayerFeatures:
                 vis_count += 1
         vis_norm = min(1.0, vis_count / 5.0)
 
+        # Rock and food counts — the NN's ammo and health pool.
+        from game.items import ItemType
+        rock_count = 0
+        food_count = 0
+        for it in player.inventory:
+            if it is None:
+                continue
+            if it.type == ItemType.ROCK:
+                rock_count += it.number_of_like_items
+            elif it.type == ItemType.FOOD:
+                food_count += it.number_of_like_items
+        rock_norm = min(1.0, rock_count / 20.0)
+        food_norm = min(1.0, food_count / 10.0)
+
         scalar = [
             hp_ratio, con_ratio, xp_norm, lvl_norm,
             *known_flags,            # 7 floats
             fire_tier_norm,
             weight_ratio, items_norm, turn_norm, vis_norm,
+            rock_norm, food_norm,
         ]
         scalar_arr = _np.asarray(scalar, dtype=_np.float32)
         assert scalar_arr.shape == (self.SCALAR_DIM,), (
@@ -597,5 +629,22 @@ class PlayerFeatures:
             if player.current_traits[Trait.CONCENTRATION] >= cost:
                 if _nearest_visible_monster(engine) is not None:
                     mask[PlayerAction.CAST_FIRE] = True
+
+        # Throw rock — have a rock AND something to throw at.
+        from game.items import ItemType
+        has_rock = any(
+            it is not None and it.type == ItemType.ROCK
+            for it in player.inventory
+        )
+        if has_rock and _nearest_visible_monster(engine) is not None:
+            mask[PlayerAction.THROW_ROCK] = True
+
+        # Eat — have food AND HP is not full.
+        has_food = any(
+            it is not None and it.type == ItemType.FOOD
+            for it in player.inventory
+        )
+        if has_food and player.hp < player.max_hp:
+            mask[PlayerAction.EAT] = True
 
         return mask

@@ -84,6 +84,12 @@ class Action(IntEnum):
     CAST = auto()          # Needs school and direction parameters.
     READ = auto()          # Needs inventory letter parameter.
 
+    # Ranged attack: throw a rock at a target or in a direction.
+    THROW_ROCK = auto()    # Takes direction or target_pos kwarg.
+
+    # Consume food for HP restore.
+    EAT = auto()           # Takes inventory letter parameter.
+
 
 # Convenience: Direction → movement Action.
 DIRECTION_TO_ACTION: dict[Direction, Action] = {

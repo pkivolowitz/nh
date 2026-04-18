@@ -252,6 +252,32 @@ def _main(stdscr: curses.window) -> None:
             renderer.detail_mode = not renderer.detail_mode
             continue
 
+        # Eat the first food item.  NetHack convention: `e`.
+        if c == ord("e"):
+            result = engine.step(Action.EAT)
+            last_message = result.message
+            continue
+
+        # Throw a rock.  Prompt for direction; `T` for throw.
+        if c == ord("T"):
+            renderer.show_message(
+                "Throw a rock in which direction? (vi keys, ESC to cancel)"
+            )
+            dch = renderer.getch_blocking()
+            if dch == 27:
+                renderer.clear_info_line()
+                continue
+            dkey = chr(dch).lower() if 0 <= dch < 256 else ""
+            if dkey not in VI_KEY_TO_DIRECTION:
+                last_message = "Invalid direction."
+                continue
+            result = engine.step(
+                Action.THROW_ROCK,
+                direction=VI_KEY_TO_DIRECTION[dkey],
+            )
+            last_message = result.message
+            continue
+
         # Wizard mode: set school proficiency for testing.
         if c == ord("W"):
             from game.magic import TIER_THRESHOLDS

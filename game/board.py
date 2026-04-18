@@ -1280,16 +1280,20 @@ class Board:
     # Chance a room gets a food scrap (attracts rats).
     FOOD_ROOM_CHANCE: int = 40
 
+    # Chance a room gets a pile of rocks — cheap ranged ammunition.
+    ROCK_ROOM_CHANCE: int = 60
+
     def _place_goodies(self, guarantee_fire: bool = False) -> None:
         """Seed rooms with items.  Spellbooks are rare; food is common.
 
         When *guarantee_fire* is True (level 1), at least one room
         gets a fire spellbook so the player can learn magic early.
         Food scraps are scattered to attract rats and give the player
-        bait material.
+        bait material.  Rocks are common — every other room or so —
+        so the player has a reliable supply of cheap ranged ammo.
         """
         from game.magic import MagicSchool
-        from game.items import Food, FOOD_KINDS
+        from game.items import Food, FOOD_KINDS, Rock
         schools: list[MagicSchool] = list(MagicSchool)
         placed_fire: bool = False
         for rm in self.rooms:
@@ -1309,3 +1313,9 @@ class Board:
                 food_pos: Coordinate = rm.random_interior_pos(self.rng)
                 if not self.is_a_stairway(food_pos):
                     self.add_goodie(food_pos, Food(food_name, food_wt))
+            # Rocks — piles of 2-5 land at a random floor cell.
+            if self.rng.randint(1, 100) <= self.ROCK_ROOM_CHANCE:
+                rock_pos: Coordinate = rm.random_interior_pos(self.rng)
+                if not self.is_a_stairway(rock_pos):
+                    pile = self.rng.randint(2, 5)
+                    self.add_goodie(rock_pos, Rock(count=pile))

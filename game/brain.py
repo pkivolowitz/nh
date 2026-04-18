@@ -73,6 +73,12 @@ REWARD_RAT_APPROACH_PREY: float = -0.10  # Got closer to player — bad for a ra
 REWARD_RAT_FOOD_CLOSER: float = 0.20    # Moved toward food — strong positive
 REWARD_RAT_ON_FOOD: float = 0.50    # Reached food cell — jackpot
 
+# Player-specific reward shaping.  The engine awards these to the player
+# alongside the implicit combat and pickup rewards.
+REWARD_DESCEND_STAIRS: float = 5.0   # Strong signal: progress matters.
+REWARD_ASCEND_STAIRS: float = 0.0    # Retreat is neither good nor bad.
+REWARD_PER_TURN_ALIVE: float = -0.01 # Tiny pressure to not stall.
+
 # Exploration rate bounds.  Starts high (try everything), decays toward
 # a floor as the species accumulates experience across games.
 EXPLORATION_MAX: float = 0.30

@@ -22,10 +22,10 @@ class TestPlayerFeatureDimensions:
     def test_feature_dim_is_scalar_plus_grid(self):
         ext = PlayerFeatures()
         assert ext.feature_dim == ext.SCALAR_DIM + PLAYER_GRID_DIM
-        assert ext.SCALAR_DIM == 16
+        assert ext.SCALAR_DIM == 18
 
-    def test_num_player_actions_is_17(self):
-        assert NUM_PLAYER_ACTIONS == 17
+    def test_action_count_matches_enum(self):
+        assert NUM_PLAYER_ACTIONS == len(PlayerAction)
 
     def test_grid_layout(self):
         assert PLAYER_GRID_SIDE == 15

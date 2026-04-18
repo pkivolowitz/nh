@@ -674,6 +674,8 @@ class Renderer:
             "Actions:",
             "  , = pick up item",
             "  d = drop item",
+            "  e = eat food (restores HP)",
+            "  T = throw rock (+ direction)",
             "  o = open door (+ direction)",
             "  c = close door (+ direction)",
             "  ^K = kick (+ direction)",

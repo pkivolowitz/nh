@@ -107,6 +107,10 @@ def _engine_action_to_player_action_idx(action: Action,
         if kwargs.get("school") == MagicSchool.FIRE:
             return int(PlayerAction.CAST_FIRE)
         return None  # Other schools aren't in the action space yet.
+    if action == _A.THROW_ROCK:
+        return int(PlayerAction.THROW_ROCK)
+    if action == _A.EAT:
+        return int(PlayerAction.EAT)
     return None  # KICK_DOOR, CLOSE_DOOR, READ, DROP — not modelled.
 
 
@@ -520,6 +524,39 @@ class AIPlayer:
 
         pos = engine.player.pos
         model = self.model
+
+        # Priority 0a: Eat when wounded and food is available.
+        from game.items import ItemType
+        if engine.player.hp <= engine.player.max_hp // 2:
+            has_food = any(
+                it is not None and it.type == ItemType.FOOD
+                for it in engine.player.inventory
+            )
+            if has_food:
+                self.thought = "Eating to heal"
+                return Action.EAT, {}
+
+        # Priority 0b: Throw rocks at a non-adjacent visible monster.
+        #   Cheap, safe, and teaches the NN "kite ranged".
+        has_rock = any(
+            it is not None and it.type == ItemType.ROCK
+            for it in engine.player.inventory
+        )
+        if has_rock:
+            target: Optional[Coordinate] = None
+            best_d: float = float("inf")
+            for m in engine.board.get_all_monsters():
+                if not m.is_alive:
+                    continue
+                if not engine.board.line_of_sight(pos, m.pos):
+                    continue
+                d = pos.distance(m.pos)
+                if d < best_d:
+                    best_d = d
+                    target = m.pos
+            if target is not None and best_d > 1.5:
+                self.thought = "Throwing rock"
+                return Action.THROW_ROCK, {"target_pos": target}
 
         # Priority 1: Pick up items if standing on them.
         if (pos.r, pos.c) in model.known_items:
