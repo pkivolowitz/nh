@@ -330,6 +330,7 @@ class PlayerAction(IntEnum):
     CAST_FIRE = 16
     THROW_ROCK = 17
     EAT = 18
+    PRACTICE = 19
 
 
 NUM_PLAYER_ACTIONS: int = len(PlayerAction)
@@ -394,6 +395,8 @@ def decode_player_action(pa: int, engine: GameEngine) -> tuple[Action, dict]:
         return Action.THROW_ROCK, {"target_pos": target}
     if pa == PlayerAction.EAT:
         return Action.EAT, {}  # Letter-less: engine eats first food.
+    if pa == PlayerAction.PRACTICE:
+        return Action.PRACTICE, {}  # Engine picks lowest-tier school.
     action, direction = _PLAYER_ACTION_MAP[pa]
     kwargs: dict = {}
     if direction != Direction.NONE:
@@ -646,5 +649,25 @@ class PlayerFeatures:
         )
         if has_food and player.hp < player.max_hp:
             mask[PlayerAction.EAT] = True
+
+        # Practice — know at least one non-Master school AND have
+        # enough concentration to pay the lowest practice cost.
+        from game.magic import (
+            MagicSchool as _MS, ProficiencyTier, SCHOOL_BASE_COST,
+        )
+        drillable = [
+            s for s in _MS
+            if player.magic.schools[s].known
+            and player.magic.schools[s].tier != ProficiencyTier.MASTER
+        ]
+        if drillable:
+            # Cost for the school the decoder would actually pick.
+            target_school = min(
+                drillable,
+                key=lambda s: int(player.magic.schools[s].tier),
+            )
+            practice_cost = max(1, SCHOOL_BASE_COST[target_school] // 2)
+            if player.current_traits[Trait.CONCENTRATION] >= practice_cost:
+                mask[PlayerAction.PRACTICE] = True
 
         return mask

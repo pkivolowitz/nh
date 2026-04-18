@@ -127,6 +127,112 @@ class TestRewardShaping:
         assert result.done
 
 
+class TestPractice:
+    """Magic practice trades concentration for XP at half normal cost."""
+
+    def test_practice_without_magic_fails(self, fresh_engine):
+        result = fresh_engine.step(Action.PRACTICE)
+        assert not result.turn_used
+        assert "haven't learned" in result.message.lower()
+
+    def test_practice_gains_xp(self, fresh_engine):
+        from game.magic import MagicSchool
+        state = fresh_engine.player.magic.schools[MagicSchool.FIRE]
+        state.known = True
+        state.xp = 0
+        xp_before = state.xp
+        result = fresh_engine.step(
+            Action.PRACTICE, school=MagicSchool.FIRE,
+        )
+        assert result.turn_used
+        assert state.xp == xp_before + 1
+
+    def test_practice_spends_concentration(self, fresh_engine):
+        from game.magic import MagicSchool, SCHOOL_BASE_COST
+        from game.player import Trait
+        fresh_engine.player.magic.schools[MagicSchool.FIRE].known = True
+        con_before = fresh_engine.player.current_traits[Trait.CONCENTRATION]
+        practice_cost = max(1, SCHOOL_BASE_COST[MagicSchool.FIRE] // 2)
+        result = fresh_engine.step(
+            Action.PRACTICE, school=MagicSchool.FIRE,
+        )
+        con_after = fresh_engine.player.current_traits[Trait.CONCENTRATION]
+        assert con_before - con_after == practice_cost
+
+    def test_practice_without_concentration_fails(self, fresh_engine):
+        from game.magic import MagicSchool
+        from game.player import Trait
+        fresh_engine.player.magic.schools[MagicSchool.FIRE].known = True
+        fresh_engine.player.current_traits[Trait.CONCENTRATION] = 0
+        result = fresh_engine.step(
+            Action.PRACTICE, school=MagicSchool.FIRE,
+        )
+        assert not result.turn_used
+        assert "focus" in result.message.lower()
+
+    def test_practice_tier_up_rewards_bonus(self, fresh_engine):
+        from game.magic import MagicSchool, TIER_THRESHOLDS, ProficiencyTier
+        from game.player import Trait
+        state = fresh_engine.player.magic.schools[MagicSchool.FIRE]
+        state.known = True
+        # One XP short of Apprentice.
+        state.xp = TIER_THRESHOLDS[ProficiencyTier.APPRENTICE] - 1
+        fresh_engine.player.current_traits[Trait.CONCENTRATION] = 100
+        result = fresh_engine.step(
+            Action.PRACTICE, school=MagicSchool.FIRE,
+        )
+        from game.brain import REWARD_PRACTICE_TIER_UP, REWARD_PRACTICE_TICK
+        # Tier-up bonus added to the per-tick reward.  Per-turn survival
+        # pressure is also applied, so the reward is slightly less.
+        expected = (
+            REWARD_PRACTICE_TICK + REWARD_PRACTICE_TIER_UP
+            - 0.02  # Wiggle room for survival pressure constant.
+        )
+        assert result.reward >= expected - 0.05
+        assert state.tier == ProficiencyTier.APPRENTICE
+
+    def test_practice_at_master_is_no_op(self, fresh_engine):
+        from game.magic import MagicSchool, TIER_THRESHOLDS, ProficiencyTier
+        state = fresh_engine.player.magic.schools[MagicSchool.FIRE]
+        state.known = True
+        state.xp = TIER_THRESHOLDS[ProficiencyTier.MASTER]
+        result = fresh_engine.step(
+            Action.PRACTICE, school=MagicSchool.FIRE,
+        )
+        assert not result.turn_used
+        assert "master" in result.message.lower()
+
+    def test_practice_auto_picks_lowest_tier(self, fresh_engine):
+        from game.magic import MagicSchool
+        # Know fire (novice) and water (apprentice).
+        fresh_engine.player.magic.schools[MagicSchool.FIRE].known = True
+        water = fresh_engine.player.magic.schools[MagicSchool.WATER]
+        water.known = True
+        water.xp = 20  # Apprentice-ish.
+        fire_before = fresh_engine.player.magic.schools[MagicSchool.FIRE].xp
+        # No explicit school → engine picks lowest tier (fire, novice).
+        result = fresh_engine.step(Action.PRACTICE)
+        assert result.turn_used
+        assert fresh_engine.player.magic.schools[MagicSchool.FIRE].xp \
+            == fire_before + 1
+
+
+class TestRebalancedRewards:
+    """Rewards are strong enough to make engagement positive-EV."""
+
+    def test_pickup_reward_is_big(self, fresh_engine):
+        from game.brain import REWARD_PICKUP_ITEM
+        assert REWARD_PICKUP_ITEM >= 2.0
+
+    def test_kill_rewards_dominate_death(self, fresh_engine):
+        from game.brain import (
+            REWARD_MELEE_KILL, REWARD_RANGED_KILL, REWARD_DEATH,
+        )
+        # Killing must be worth enough to risk dying.
+        assert REWARD_MELEE_KILL >= abs(REWARD_DEATH) / 2
+        assert REWARD_RANGED_KILL >= abs(REWARD_DEATH) / 2
+
+
 class TestRockPlacement:
     """New levels must have at least some rocks to pick up."""
 

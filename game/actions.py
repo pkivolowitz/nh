@@ -90,6 +90,9 @@ class Action(IntEnum):
     # Consume food for HP restore.
     EAT = auto()           # Takes inventory letter parameter.
 
+    # Drill a magic school: spend concentration, gain XP, no target.
+    PRACTICE = auto()      # Takes optional school kwarg.
+
 
 # Convenience: Direction → movement Action.
 DIRECTION_TO_ACTION: dict[Direction, Action] = {

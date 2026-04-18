@@ -64,6 +64,14 @@ from game.brain import (
     REWARD_WAIT,
     REWARD_DESCEND_STAIRS,
     REWARD_PER_TURN_ALIVE,
+    REWARD_PICKUP_ITEM,
+    REWARD_MELEE_HIT,
+    REWARD_MELEE_KILL,
+    REWARD_RANGED_HIT,
+    REWARD_RANGED_KILL,
+    REWARD_EAT,
+    REWARD_PRACTICE_TICK,
+    REWARD_PRACTICE_TIER_UP,
 )
 from game.monster import Monster
 
@@ -182,6 +190,8 @@ class GameEngine:
             result = self._handle_throw_rock(direction, target_pos=target_pos)
         elif action == Action.EAT:
             result = self._handle_eat(letter)
+        elif action == Action.PRACTICE:
+            result = self._handle_practice(school)
         else:
             result = StepResult(message="Unknown action.")
 
@@ -323,7 +333,7 @@ class GameEngine:
         self.turn_counter += 1
         self.board.emit_noise(self.player.pos, NOISE_MELEE)
 
-        reward: float = 0.5
+        reward: float = REWARD_MELEE_HIT
         if result.defender_killed:
             # Record death in the species brain before removing.
             brain = monster.species.get_brain()
@@ -334,7 +344,7 @@ class GameEngine:
             self.board.remove_monster(monster.pos)
             kill_verb: str = self.rng.choice(UNARMED_KILL_VERBS)
             msg: str = f"You {kill_verb} the {monster.name}!"
-            reward = 2.0
+            reward = REWARD_MELEE_KILL
         else:
             verb: str = self.rng.choice(UNARMED_VERBS)
             msg = f"You {verb} the {monster.name}. ({result.damage} damage)"
@@ -577,7 +587,7 @@ class GameEngine:
                 self.board.add_goodie(self.player.pos, item)
             else:
                 picked_up += 1
-                reward += 1.0  # Reward signal for ML agents.
+                reward += REWARD_PICKUP_ITEM
 
         if picked_up > 0:
             self.turn_counter += 1
@@ -706,12 +716,12 @@ class GameEngine:
         reward: float = 0.0
         if hit_monster is not None:
             if killed:
-                reward = 2.0
+                reward = REWARD_RANGED_KILL
                 self.board.remove_monster(hit_monster.pos)
                 msg = (f"The rock strikes the {hit_monster.name} — "
                        f"it collapses! ({damage} damage)")
             else:
-                reward = 0.5
+                reward = REWARD_RANGED_HIT
                 msg = (f"The rock strikes the {hit_monster.name}. "
                        f"({damage} damage)")
         else:
@@ -753,9 +763,70 @@ class GameEngine:
         self.turn_counter += 1
         return StepResult(
             message=f"You eat the {item.item_name}. (+{healed} HP)",
-            reward=0.3,
+            reward=REWARD_EAT,
             turn_used=True,
         )
+
+    # ------------------------------------------------------------------
+    # Magic practice
+    # ------------------------------------------------------------------
+
+    def _handle_practice(self, school: Optional[MagicSchool] = None
+                         ) -> StepResult:
+        """Drill a magic school for XP at half the normal concentration cost.
+
+        Practice has no external effect — no noise, no damage, no target.
+        It trades reserves for skill.  If *school* is omitted, the
+        lowest-tier known school is drilled (most value for the money).
+        Masters cannot practice — they're already at the ceiling.
+        """
+        from game.magic import (
+            MagicSchool, ProficiencyTier,
+            SCHOOL_BASE_COST, SCHOOL_NAMES, TIER_NAMES,
+        )
+        from game.player import Trait
+
+        known: list[MagicSchool] = self.player.magic.known_schools()
+        if not known:
+            return StepResult(message="You haven't learned any magic yet.")
+
+        # Pick the school if none given: lowest-tier known (can be
+        # tiebroken by enum order — fine).
+        if school is None:
+            school = min(
+                known,
+                key=lambda s: int(self.player.magic.schools[s].tier),
+            )
+
+        state = self.player.magic.schools[school]
+        if not state.known:
+            return StepResult(
+                message=f"You haven't learned {SCHOOL_NAMES[school]}."
+            )
+        if state.tier == ProficiencyTier.MASTER:
+            return StepResult(
+                message=f"Your {SCHOOL_NAMES[school]} is already masterful."
+            )
+
+        base_cost: int = SCHOOL_BASE_COST[school]
+        practice_cost: int = max(1, base_cost // 2)
+        if not self.player.spend_concentration(practice_cost):
+            return StepResult(message="You haven't the focus to practice.")
+
+        tier_before: ProficiencyTier = state.tier
+        state.add_xp(1)
+        tier_after: ProficiencyTier = state.tier
+        self.turn_counter += 1
+
+        reward: float = REWARD_PRACTICE_TICK
+        if tier_after != tier_before:
+            reward += REWARD_PRACTICE_TIER_UP
+            msg = (f"You practice {SCHOOL_NAMES[school]}. "
+                   f"You reach {TIER_NAMES[tier_after]}!")
+        else:
+            msg = f"You practice {SCHOOL_NAMES[school]} incantations."
+
+        return StepResult(message=msg, reward=reward, turn_used=True)
 
     # ------------------------------------------------------------------
     # Doors

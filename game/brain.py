@@ -83,6 +83,26 @@ REWARD_DESCEND_STAIRS: float = 0.0
 REWARD_ASCEND_STAIRS: float = 0.0
 REWARD_PER_TURN_ALIVE: float = -0.01 # Tiny pressure to not stall.
 
+# Player-side goodies rewards.  These were tuned upward after the NN
+# discovered a "cowardly optimum" where doing nothing paid out better
+# than engaging: death (-5) outweighed the pickup/kill incentives to
+# explore and fight.  Item and kill rewards now dominate the per-turn
+# pressure, so engaging is the positive-expectation choice.
+REWARD_PICKUP_ITEM: float = 3.0        # Per item picked up.
+REWARD_MELEE_HIT: float = 0.5          # Melee bump landed (no kill).
+REWARD_MELEE_KILL: float = 5.0         # Melee bump killed defender.
+REWARD_RANGED_HIT: float = 0.5         # Rock landed (no kill).
+REWARD_RANGED_KILL: float = 5.0        # Rock killed the target.
+REWARD_EAT: float = 0.3                # Food consumed, HP restored.
+
+# Magic practice.  Practicing trades concentration for XP without a
+# target or noise; it's the thing you do in a cleared room while
+# resting.  Reward is small per tick so the NN notices it, larger on
+# tier-up so reaching each threshold (Apprentice, Journeyman, ...)
+# feels like a milestone worth working toward.
+REWARD_PRACTICE_TICK: float = 0.1
+REWARD_PRACTICE_TIER_UP: float = 2.0
+
 # Exploration rate bounds.  Starts high (try everything), decays toward
 # a floor as the species accumulates experience across games.
 EXPLORATION_MAX: float = 0.30

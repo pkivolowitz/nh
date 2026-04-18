@@ -111,6 +111,8 @@ def _engine_action_to_player_action_idx(action: Action,
         return int(PlayerAction.THROW_ROCK)
     if action == _A.EAT:
         return int(PlayerAction.EAT)
+    if action == _A.PRACTICE:
+        return int(PlayerAction.PRACTICE)
     return None  # KICK_DOOR, CLOSE_DOOR, READ, DROP — not modelled.
 
 
@@ -535,6 +537,39 @@ class AIPlayer:
             if has_food:
                 self.thought = "Eating to heal"
                 return Action.EAT, {}
+
+        # Priority 0.5: Practice magic when safe, full HP, and with
+        # concentration reserves.  "Safe" means no monster is visible.
+        # This teaches the NN to drill in cleared rooms.
+        from game.magic import (
+            MagicSchool as _MS, ProficiencyTier, SCHOOL_BASE_COST,
+        )
+        from game.player import Trait
+        drillable_schools = [
+            s for s in _MS
+            if engine.player.magic.schools[s].known
+            and engine.player.magic.schools[s].tier != ProficiencyTier.MASTER
+        ]
+        if drillable_schools:
+            target_school = min(
+                drillable_schools,
+                key=lambda s: int(engine.player.magic.schools[s].tier),
+            )
+            practice_cost = max(1, SCHOOL_BASE_COST[target_school] // 2)
+            con_cur = engine.player.current_traits[Trait.CONCENTRATION]
+            con_max = engine.player.maximum_traits[Trait.CONCENTRATION]
+            any_visible_monster = any(
+                m.is_alive
+                and engine.board.line_of_sight(pos, m.pos)
+                for m in engine.board.get_all_monsters()
+            )
+            hp_full = engine.player.hp == engine.player.max_hp
+            # Safe, healthy, reasonably focused → drill.
+            if (not any_visible_monster and hp_full
+                    and con_cur >= practice_cost
+                    and con_cur >= int(con_max * 0.75)):
+                self.thought = "Practicing magic"
+                return Action.PRACTICE, {}
 
         # Priority 0b: Throw rocks at a non-adjacent visible monster.
         #   Cheap, safe, and teaches the NN "kite ranged".
