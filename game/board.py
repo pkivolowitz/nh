@@ -43,7 +43,7 @@ from game.effects import (
     FIRE_DURATION, SCORCH_DURATION, FIRE_DAMAGE_PER_TURN,
 )
 from game.room import Room
-from game.items import BaseItem, Spellbook
+from game.items import BaseItem, Spellbook, ItemType
 from game.drawing_support import corner_map
 from game.monster import Monster, MonsterSpecies, get_eligible_species
 
@@ -369,8 +369,8 @@ class Board:
     # Ephemeral tile effects
     # ------------------------------------------------------------------
 
-    def add_fire(self, pos: Coordinate) -> None:
-        """Place a fire effect at *pos*.
+    def add_fire(self, pos: Coordinate) -> list[str]:
+        """Place a fire effect at *pos* and incinerate flammable goodies.
 
         Fire burns doors in stages:
             intact → charred (retains open/closed state)
@@ -378,6 +378,10 @@ class Board:
         A charred closed door still blocks — burn it again or kick it
         to destroy.  A charred open door can't be closed.
         Fire replaces any existing effect at this cell.
+
+        Flammable items (spellbooks, scrolls, food) on the cell are
+        consumed.  Potions survive (glass).  Returns descriptions of
+        any items destroyed so the caller can report them.
         """
         cell = self.cells[pos.r][pos.c]
         if cell.base_type == CellBaseType.DOOR:
@@ -390,9 +394,25 @@ class Board:
                 # First fire chars the door but keeps its state.
                 cell.door_charred = True
                 self._update_door_display(pos.r, pos.c)
+
+        burned: list[str] = []
+        pile = self.goodies.get(pos)
+        if pile:
+            survivors: list[BaseItem] = []
+            for item in pile:
+                if item.type == ItemType.POTION:
+                    survivors.append(item)
+                else:
+                    burned.append(item.describe())
+            if survivors:
+                self.goodies[pos] = survivors
+            else:
+                del self.goodies[pos]
+
         self.effects[pos] = TileEffect(
             EffectType.FIRE, pos, FIRE_DURATION, FIRE_DAMAGE_PER_TURN
         )
+        return burned
 
     def tick_effects(self) -> list[str]:
         """Advance all effects by one turn.

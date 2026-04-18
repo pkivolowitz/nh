@@ -12,6 +12,7 @@ from __future__ import annotations
 __version__ = "0.1.0"
 
 from game.coordinate import Coordinate
+from game.senses import Senses
 
 
 class Creature:
@@ -19,6 +20,10 @@ class Creature:
 
     Both Player and Monster inherit from this class, ensuring a unified
     interface for combat, rendering, and ML observation.
+
+    Every creature carries a ``Senses`` profile; the default is the
+    human baseline (all factors 1.0).  Monsters override it via their
+    species template.
     """
 
     def __init__(self, name: str, pos: Coordinate, speed: int,
@@ -32,6 +37,7 @@ class Creature:
         self.color_pair: int = color_pair
         self.is_alive: bool = True
         self.energy: int = 0
+        self.senses: Senses = Senses()
 
     def take_damage(self, amount: int) -> int:
         """Apply *amount* damage.  Returns actual damage dealt.

@@ -48,10 +48,15 @@ def parse_args() -> argparse.Namespace:
 
 def _ai_loop(engine: GameEngine, renderer: Renderer,
              speed_ms: int) -> None:
-    """Let the AI player drive the game.  Press 'q' to quit."""
-    from game.ai_player import AIPlayer
+    """Let the AI player drive the game.  Press 'q' to quit.
 
-    ai = AIPlayer()
+    Loads the persistent AI brain on entry and saves it on exit so
+    interactive watch sessions contribute to long-term learning.
+    """
+    from game.ai_player import AIPlayer, PlayerBrain, AI_BRAIN_PATH
+
+    brain = PlayerBrain.load(AI_BRAIN_PATH)
+    ai = AIPlayer(brain=brain)
     speed_sec = speed_ms / 1000.0
 
     while True:
@@ -79,6 +84,7 @@ def _ai_loop(engine: GameEngine, renderer: Renderer,
 
         # Player died.
         if result.done:
+            brain.deaths += 1
             renderer.show_message("AI died! Press any key to exit.")
             renderer.getch_blocking()
             break
@@ -95,6 +101,9 @@ def _ai_loop(engine: GameEngine, renderer: Renderer,
             speed_ms = min(2000, speed_ms + 20)
 
         renderer.map_win.timeout(50)  # Restore default.
+
+    brain.games_played += 1
+    brain.save(AI_BRAIN_PATH)
 
 
 def _monster_visible(engine: GameEngine) -> bool:

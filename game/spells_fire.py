@@ -308,6 +308,7 @@ def resolve_fire(engine: GameEngine, direction: Direction,
     total_dealt: int = 0
     kills: list[str] = []
     hit_monsters: list[str] = []
+    burned_items: list[str] = []
 
     for mr in range(impact.r - radius, impact.r + radius + 1):
         for mc in range(impact.c - radius, impact.c + radius + 1):
@@ -327,8 +328,8 @@ def resolve_fire(engine: GameEngine, direction: Direction,
             if not board.line_of_sight(impact, pos):
                 continue
 
-            # Place fire on the board.
-            board.add_fire(pos)
+            # Place fire on the board; collect any items consumed.
+            burned_items.extend(board.add_fire(pos))
 
             monster = board.get_monster_at(pos)
             if monster is not None:
@@ -384,5 +385,9 @@ def resolve_fire(engine: GameEngine, direction: Direction,
     elif hit_monsters:
         hit_str: str = ", ".join(hit_monsters)
         result.message += f" Fire scorches the {hit_str}."
+
+    if burned_items:
+        item_str: str = ", ".join(burned_items)
+        result.message += f" The fire burns {item_str} to ash."
 
     return result

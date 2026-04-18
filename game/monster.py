@@ -23,6 +23,7 @@ from game.combat import CombatAction, BumpAttack
 from game.colors import CLR_BROWN
 from game.actions import Action
 from game.constants import NOISE_MONSTER_MOVE
+from game.senses import Senses
 
 if TYPE_CHECKING:
     from game.brain import Brain
@@ -45,7 +46,8 @@ class MonsterSpecies:
                  frequency: int,
                  brain_class: type,
                  move_noise: int = NOISE_MONSTER_MOVE,
-                 noise_description: str = "sound of movement") -> None:
+                 noise_description: str = "sound of movement",
+                 senses: Optional[Senses] = None) -> None:
         self.name: str = name
         self.symbol: int = symbol
         self.color_pair: int = color_pair
@@ -63,6 +65,8 @@ class MonsterSpecies:
         self.frequency: int = frequency
         self.move_noise: int = move_noise
         self.noise_description: str = noise_description
+        # Perceptual profile — all six senses scaled against humans.
+        self.senses: Senses = senses if senses is not None else Senses()
         self._brain_class: type = brain_class
         self._brain: Optional[Brain] = None
 
@@ -98,6 +102,8 @@ class Monster(Creature):
         self.species: MonsterSpecies = species
         self.ac: int = species.ac
         self.base_level: int = species.base_level
+        # Adopt the species' perceptual profile.
+        self.senses = species.senses
 
         # Brain learning state -- tracks what this individual just did
         # so rewards are attributed to the correct (state, action) pair.
@@ -146,6 +152,15 @@ def _build_species_registry() -> dict[str, MonsterSpecies]:
         brain_class=JackalBrain,
         move_noise=4,
         noise_description="soft padding of paws",
+        # Jackal: strong night vision and keen nose, weak ESP (none).
+        senses=Senses(
+            sight_lit=1.0,
+            sight_dark=4.0,
+            hearing=2.0,
+            smell=6.0,
+            touch=1.0,
+            esp=0.0,
+        ),
     )
 
     # Rat -- cowardly scavenger.  Flees the player, seeks food on the
@@ -170,6 +185,15 @@ def _build_species_registry() -> dict[str, MonsterSpecies]:
         brain_class=RatBrain,
         move_noise=2,
         noise_description="faint scratching",
+        # Rat: nearly blind, superb nose, whiskers extend touch.
+        senses=Senses(
+            sight_lit=0.5,
+            sight_dark=1.0,
+            hearing=1.5,
+            smell=7.0,
+            touch=2.0,
+            esp=0.0,
+        ),
     )
 
     return registry

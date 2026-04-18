@@ -18,9 +18,12 @@ Architecture
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
+import json
+import logging
 import math
+import os
 from collections import deque
 from typing import Optional
 
@@ -33,6 +36,8 @@ from game.constants import BOARD_ROWS, BOARD_COLUMNS
 from game.coordinate import Coordinate
 from game.engine import GameEngine, StepResult
 
+logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Context keys for the reward model
@@ -44,33 +49,121 @@ CTX_ON_UP_STAIRS = "on_up_stairs"
 CTX_DEFAULT = "default"
 
 
-class WorldModel:
-    """Everything the agent has learned about the current dungeon level."""
+# Persistence path for the AI player's cross-game brain.
+AI_BRAIN_PATH: str = "~/.pnh/brains/ai_player.json"
+
+
+class PlayerBrain:
+    """Cross-game persistent knowledge for the AI player.
+
+    The AI's world map (known cells, visited, item locations) is
+    per-level and discarded when a new dungeon is generated.  But the
+    transition and reward models describe the game *engine* — they
+    hold regardless of which dungeon is rolled — so they accumulate
+    across every game ever played.  This object owns that learning
+    and is saved to disk between runs.
+    """
 
     def __init__(self) -> None:
-        # Observed cell types: (r, c) → CellBaseType int value.
+        # (cell_type, action_category) → {"success": int, "fail": int}
+        self.transition_counts: dict[tuple[int, str], dict[str, int]] = {}
+        # (action_category, context) → {"total": float, "count": int}
+        self.reward_counts: dict[tuple[str, str], dict[str, float]] = {}
+        # Lifetime counters.
+        self.total_actions: int = 0
+        self.games_played: int = 0
+        self.deaths: int = 0
+        self.items_collected: int = 0
+
+    # -- persistence -------------------------------------------------------
+
+    @staticmethod
+    def _encode_tuple_key(key: tuple) -> str:
+        """Encode a tuple key as a string for JSON storage."""
+        return "|".join(str(k) for k in key)
+
+    def save(self, path: str) -> None:
+        """Serialize brain state to JSON."""
+        path = os.path.expanduser(path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        data: dict = {
+            "transition_counts": {
+                self._encode_tuple_key(k): v
+                for k, v in self.transition_counts.items()
+            },
+            "reward_counts": {
+                self._encode_tuple_key(k): v
+                for k, v in self.reward_counts.items()
+            },
+            "total_actions": self.total_actions,
+            "games_played": self.games_played,
+            "deaths": self.deaths,
+            "items_collected": self.items_collected,
+        }
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+
+    @classmethod
+    def load(cls, path: str) -> PlayerBrain:
+        """Load brain state from JSON, returning a fresh brain if absent."""
+        brain = cls()
+        path = os.path.expanduser(path)
+        if not os.path.exists(path):
+            return brain
+        try:
+            with open(path, "r") as f:
+                data: dict = json.load(f)
+            for k, v in data.get("transition_counts", {}).items():
+                ct_str, action_cat = k.split("|", 1)
+                brain.transition_counts[(int(ct_str), action_cat)] = v
+            for k, v in data.get("reward_counts", {}).items():
+                action_cat, context = k.split("|", 1)
+                brain.reward_counts[(action_cat, context)] = v
+            brain.total_actions = data.get("total_actions", 0)
+            brain.games_played = data.get("games_played", 0)
+            brain.deaths = data.get("deaths", 0)
+            brain.items_collected = data.get("items_collected", 0)
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            logger.debug("Failed to load player brain from %s: %s", path, exc)
+        return brain
+
+
+class WorldModel:
+    """Per-level map memory, plus shared references to the brain's models.
+
+    Map memory (known cells, visited, item and stair locations) is
+    specific to the current dungeon level and is discarded when a new
+    dungeon is generated.  Transition and reward counts live on the
+    shared ``PlayerBrain`` so they accumulate across games.
+    """
+
+    def __init__(self, brain: PlayerBrain) -> None:
+        # Per-level map memory — scoped to one dungeon level.
         self.known_cells: dict[tuple[int, int], int] = {}
-
-        # Cells the agent has physically visited.
         self.visited: set[tuple[int, int]] = set()
-
-        # Observed item locations (may be stale after pickup).
         self.known_items: set[tuple[int, int]] = set()
-
-        # Observed stair locations: (r, c) → "up" | "down".
         self.known_stairs: dict[tuple[int, int], str] = {}
 
-        # Transition model: (target_cell_type, action_category) →
-        #   {"success": n, "fail": n}
-        # action_category is "move", "pickup", "stairs_down", etc.
-        self.transition_counts: dict[tuple[int, str], dict[str, int]] = {}
+        # Shared dynamics and reward models live on the brain.
+        self._brain: PlayerBrain = brain
 
-        # Reward model: (action_category, context) →
-        #   {"total": float, "count": int}
-        self.reward_counts: dict[tuple[str, str], dict[str, float]] = {}
+    # -- brain-backed properties ------------------------------------------
 
-        # Total actions taken (for exploration decay).
-        self.total_actions: int = 0
+    @property
+    def transition_counts(self) -> dict[tuple[int, str], dict[str, int]]:
+        return self._brain.transition_counts
+
+    @property
+    def reward_counts(self) -> dict[tuple[str, str], dict[str, float]]:
+        return self._brain.reward_counts
+
+    @property
+    def total_actions(self) -> int:
+        return self._brain.total_actions
+
+    @total_actions.setter
+    def total_actions(self, value: int) -> None:
+        self._brain.total_actions = value
 
     # -- model updates -----------------------------------------------------
 
@@ -165,8 +258,11 @@ class AIPlayer:
     the next action to take.
     """
 
-    def __init__(self) -> None:
-        # One WorldModel per dungeon level.
+    def __init__(self, brain: Optional[PlayerBrain] = None) -> None:
+        # Persistent cross-game knowledge.  If omitted, the agent
+        # starts fresh — no learning carries over.
+        self.brain: PlayerBrain = brain if brain is not None else PlayerBrain()
+        # One WorldModel per dungeon level (map memory only).
         self.level_models: dict[int, WorldModel] = {}
         self.current_level: int = 0
         self._plan: list[Action] = []
@@ -182,7 +278,7 @@ class AIPlayer:
     def model(self) -> WorldModel:
         """The world model for the current dungeon level."""
         if self.current_level not in self.level_models:
-            self.level_models[self.current_level] = WorldModel()
+            self.level_models[self.current_level] = WorldModel(self.brain)
         return self.level_models[self.current_level]
 
     def choose_action(self, engine: GameEngine) -> tuple[Action, dict]:
@@ -292,7 +388,9 @@ class AIPlayer:
             self._last_action_cat, self._last_context, result.reward,
         )
         if result.reward > 0:
-            self._items_collected += int(result.reward)
+            gained: int = int(result.reward)
+            self._items_collected += gained
+            self.brain.items_collected += gained
 
     # -- planning ----------------------------------------------------------
 

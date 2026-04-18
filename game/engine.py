@@ -465,7 +465,6 @@ class GameEngine:
         from game.brain import (
             REWARD_RAT_FLEE, REWARD_RAT_APPROACH_PREY,
             REWARD_RAT_FOOD_CLOSER, REWARD_RAT_ON_FOOD,
-            RAT_FOOD_SENSE_RADIUS,
         )
         from game.items import ItemType
 
@@ -477,9 +476,10 @@ class GameEngine:
         elif new_dist < old_dist:
             reward += REWARD_RAT_APPROACH_PREY
 
-        # Food proximity reward.
-        best_food_dist_old: float = RAT_FOOD_SENSE_RADIUS + 1
-        best_food_dist_new: float = RAT_FOOD_SENSE_RADIUS + 1
+        # Food proximity reward, scoped to the rat's own smell radius.
+        smell_r: float = monster.senses.smell_radius()
+        best_food_dist_old: float = smell_r + 1
+        best_food_dist_new: float = smell_r + 1
         for coord, items in self.board.goodies.items():
             for item in items:
                 if item.type == ItemType.FOOD:

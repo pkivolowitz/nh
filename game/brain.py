@@ -73,9 +73,6 @@ REWARD_RAT_APPROACH_PREY: float = -0.10  # Got closer to player — bad for a ra
 REWARD_RAT_FOOD_CLOSER: float = 0.20    # Moved toward food — strong positive
 REWARD_RAT_ON_FOOD: float = 0.50    # Reached food cell — jackpot
 
-# Detection radius for rats sensing food.
-RAT_FOOD_SENSE_RADIUS: float = 8.0
-
 # Exploration rate bounds.  Starts high (try everything), decays toward
 # a floor as the species accumulates experience across games.
 EXPLORATION_MAX: float = 0.30
@@ -191,19 +188,25 @@ class JackalBrain(Brain):
                  engine: GameEngine) -> dict:
         """Build canine-appropriate perception of the world.
 
-        A jackal perceives: prey visibility and distance, own health,
-        nearby packmates, and audible noise (with direction).  No
-        map memory, no BFS, no planning -- pure instinct-level
-        awareness.
+        A jackal perceives: prey visibility (gated by sight_radius)
+        and distance, own health, nearby packmates, audible noise
+        (with direction), and scent — a directional vector toward
+        the player when within smell_radius, penetrating walls.
+        Sight and smell are independent senses.
         """
         player = engine.player
         board = engine.board
+        senses = monster.senses
 
-        # Can I see prey?
-        can_see: bool = board.line_of_sight(monster.pos, player.pos)
-
-        # Distance to prey (binned).
+        # Distance to prey (needed for sight gating and scent).
         dist: float = monster.pos.distance(player.pos)
+
+        # Can I see prey?  Requires LOS and that the prey is within
+        # sight range — and that range depends on whether the prey's
+        # cell is lit.  Jackals have strong dark vision; rats don't.
+        has_los: bool = board.line_of_sight(monster.pos, player.pos)
+        target_lit: bool = board.cells[player.pos.r][player.pos.c].lit
+        can_see: bool = has_los and dist <= senses.sight_radius(target_lit)
         if dist <= DIST_ADJACENT:
             dist_bin: str = "adjacent"
         elif dist <= DIST_CLOSE:
@@ -253,6 +256,18 @@ class JackalBrain(Brain):
             ndr = 0
             ndc = 0
 
+        # Scent: directional vector toward prey if within smell range.
+        # Smell penetrates walls — the jackal can track unseen prey.
+        smell_detected: bool = dist <= senses.smell_radius()
+        if smell_detected:
+            sdr: int = ((player.pos.r > monster.pos.r)
+                        - (player.pos.r < monster.pos.r))
+            sdc: int = ((player.pos.c > monster.pos.c)
+                        - (player.pos.c < monster.pos.c))
+        else:
+            sdr = 0
+            sdc = 0
+
         return {
             "can_see_prey": can_see,
             "prey_distance": dist_bin,
@@ -260,15 +275,17 @@ class JackalBrain(Brain):
             "pack": pack_bin,
             "hear": hear_bin,
             "noise_dir": (ndr, ndc),
+            "smell": smell_detected,
+            "scent_dir": (sdr, sdc),
         }
 
     def _state_key(self, perception: dict) -> str:
         """Discretize perception into a hashable Q-table key.
 
-        The hearing dimension is only meaningful when non-silent,
-        so direction is appended only in that case.  This keeps the
-        silent state space small while letting the brain learn
-        direction-dependent responses to sound.
+        The hearing and scent dimensions each append their direction
+        only when the sense is active, keeping the silent/no-scent
+        state space small while letting the brain learn
+        direction-dependent responses.
         """
         base: str = (
             f"see={perception['can_see_prey']}"
@@ -280,6 +297,9 @@ class JackalBrain(Brain):
         if perception["hear"] != "silent":
             ndr, ndc = perception["noise_dir"]
             base += f"|ndir=({ndr},{ndc})"
+        if perception["smell"]:
+            sdr, sdc = perception["scent_dir"]
+            base += f"|scent=({sdr},{sdc})"
         return base
 
     # -- action selection --------------------------------------------------
@@ -456,18 +476,24 @@ class RatBrain(Brain):
                  engine: GameEngine) -> dict:
         """Build rodent-appropriate perception of the world.
 
-        A rat perceives: danger visibility and distance, own health,
-        whether food is nearby and in which direction, and how many
-        escape routes exist (cells moving away from the player).
+        A rat perceives: danger visibility (gated by poor sight_radius)
+        and distance, own health, scent of predator (directional,
+        through walls), whether food is within smell range and which
+        direction it lies, and how many escape routes exist.  Rats see
+        poorly but smell extraordinarily well.
         """
         player = engine.player
         board = engine.board
+        senses = monster.senses
 
-        # Can I see the predator?
-        can_see: bool = board.line_of_sight(monster.pos, player.pos)
-
-        # Distance to predator (binned).
+        # Distance to predator (needed for sight gating, scent, and binning).
         dist: float = monster.pos.distance(player.pos)
+
+        # Can I see the predator?  Rat vision is terrible even with LOS
+        # and falls off further when the target cell is unlit.
+        has_los: bool = board.line_of_sight(monster.pos, player.pos)
+        target_lit: bool = board.cells[player.pos.r][player.pos.c].lit
+        can_see: bool = has_los and dist <= senses.sight_radius(target_lit)
         if dist <= DIST_ADJACENT:
             dist_bin: str = "adjacent"
         elif dist <= DIST_CLOSE:
@@ -486,11 +512,13 @@ class RatBrain(Brain):
         else:
             hp_bin = "critical"
 
-        # Food detection: find nearest food within sense radius.
+        # Food detection: find nearest food within smell radius.
+        # The rat's nose is its primary food-finding sense.
+        smell_r: float = senses.smell_radius()
         food_nearby: bool = False
         food_dr: int = 0
         food_dc: int = 0
-        best_food_dist: float = RAT_FOOD_SENSE_RADIUS + 1
+        best_food_dist: float = smell_r + 1
         from game.items import ItemType
         for coord, items in board.goodies.items():
             for item in items:
@@ -504,6 +532,19 @@ class RatBrain(Brain):
                         food_dc = ((coord.c > monster.pos.c)
                                    - (coord.c < monster.pos.c))
                     break  # One food item per cell is enough.
+
+        # Predator scent: directional awareness of the player even
+        # when unseen.  Rats' extraordinary smell lets them avoid
+        # predators before they're visible.
+        smell_predator: bool = dist <= smell_r
+        if smell_predator:
+            sdr: int = ((player.pos.r > monster.pos.r)
+                        - (player.pos.r < monster.pos.r))
+            sdc: int = ((player.pos.c > monster.pos.c)
+                        - (player.pos.c < monster.pos.c))
+        else:
+            sdr = 0
+            sdc = 0
 
         # Escape routes: adjacent navigable cells that increase distance
         # from the player.
@@ -539,10 +580,16 @@ class RatBrain(Brain):
             "food_nearby": food_nearby,
             "food_dir": (food_dr, food_dc),
             "escape": escape_bin,
+            "smell_predator": smell_predator,
+            "scent_dir": (sdr, sdc),
         }
 
     def _state_key(self, perception: dict) -> str:
-        """Discretize perception into a Q-table key."""
+        """Discretize perception into a Q-table key.
+
+        Food-direction and predator-scent are each appended only when
+        that sense is active, keeping the state space compact.
+        """
         base: str = (
             f"see={perception['can_see_prey']}"
             f"|dist={perception['prey_distance']}"
@@ -553,6 +600,9 @@ class RatBrain(Brain):
         if perception["food_nearby"]:
             fdr, fdc = perception["food_dir"]
             base += f"|fdir=({fdr},{fdc})"
+        if perception["smell_predator"]:
+            sdr, sdc = perception["scent_dir"]
+            base += f"|scent=({sdr},{sdc})"
         return base
 
     # -- action selection --------------------------------------------------
