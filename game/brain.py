@@ -103,6 +103,16 @@ REWARD_EAT: float = 0.3                # Food consumed, HP restored.
 REWARD_PRACTICE_TICK: float = 0.1
 REWARD_PRACTICE_TIER_UP: float = 2.0
 
+# Discovery.  Seeing new territory is one of the core reasons to play
+# a dungeon crawler — the fog lifts and something new is revealed.
+# Each newly revealed cell pays a small reward; completing a level's
+# map (most of the navigable cells observed at least once) grants a
+# one-shot bonus, since finishing a map is a proxy for "I explored
+# this level thoroughly".
+REWARD_CELL_REVEALED: float = 0.03
+REWARD_MAP_COMPLETED: float = 5.0
+MAP_COMPLETION_THRESHOLD: float = 0.90  # Fraction of navigable cells seen.
+
 # Exploration rate bounds.  Starts high (try everything), decays toward
 # a floor as the species accumulates experience across games.
 EXPLORATION_MAX: float = 0.30

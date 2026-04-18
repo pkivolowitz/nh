@@ -72,6 +72,9 @@ from game.brain import (
     REWARD_EAT,
     REWARD_PRACTICE_TICK,
     REWARD_PRACTICE_TIER_UP,
+    REWARD_CELL_REVEALED,
+    REWARD_MAP_COMPLETED,
+    MAP_COMPLETION_THRESHOLD,
 )
 from game.monster import Monster
 
@@ -117,6 +120,8 @@ class GameEngine:
         self._monsters_placed: set[int] = set()
         self._last_heal_turn: int = 0
         self._last_conc_turn: int = 0
+        # Levels whose map-completion bonus has already been awarded.
+        self._maps_completed: set[int] = set()
 
         # Generate the first level.
         self._new_board()
@@ -256,9 +261,26 @@ class GameEngine:
             # Strong negative signal: death is what we're trying to avoid.
             result.reward += REWARD_DEATH
 
-        # Update visibility from the player's new position so both
-        # the renderer and headless agents see consistent is_known.
+        # Visibility update — snapshot known-count before, diff after,
+        # pay reward for each newly revealed cell and a completion
+        # bonus when the level's navigable map is mostly explored.
+        known_before: int = self._count_known_cells()
         self.board.update_visibility(self.player.pos)
+        if result.turn_used and self.player.is_alive:
+            revealed: int = self._count_known_cells() - known_before
+            if revealed > 0:
+                result.reward += revealed * REWARD_CELL_REVEALED
+            level_idx: int = self.current_board_index
+            if level_idx not in self._maps_completed:
+                frac: float = self._map_completion_fraction()
+                if frac >= MAP_COMPLETION_THRESHOLD:
+                    self._maps_completed.add(level_idx)
+                    result.reward += REWARD_MAP_COMPLETED
+                    if result.message:
+                        result.message += " You have mapped this level!"
+                    else:
+                        result.message = "You have mapped this level!"
+
         return result
 
     # ------------------------------------------------------------------
@@ -1026,6 +1048,41 @@ class GameEngine:
                     if self.board.get_monster_at(Coordinate(nr, nc)) is not None:
                         return True
         return False
+
+    def _count_known_cells(self) -> int:
+        """Count cells on the current level that have ever been observed."""
+        board = self.board
+        total: int = 0
+        for row in board.cells:
+            for cell in row:
+                if cell.is_known:
+                    total += 1
+        return total
+
+    def _map_completion_fraction(self) -> float:
+        """Fraction of navigable cells on this level that are known.
+
+        Navigable here = ROOM, CORRIDOR, DOOR — the cells the player
+        could physically reach.  Walls and empty stone don't count
+        toward coverage so a level can be "complete" without the
+        player walking every wall segment.
+        """
+        board = self.board
+        known: int = 0
+        total: int = 0
+        for row in board.cells:
+            for cell in row:
+                if cell.base_type in (
+                    CellBaseType.ROOM,
+                    CellBaseType.CORRIDOR,
+                    CellBaseType.DOOR,
+                ):
+                    total += 1
+                    if cell.is_known:
+                        known += 1
+        if total == 0:
+            return 0.0
+        return known / total
 
     def _try_natural_heal(self) -> str:
         """Heal 1 HP if enough turns have passed and no enemies are adjacent.
