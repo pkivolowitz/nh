@@ -271,6 +271,15 @@ class PolicyBrain(Brain):
 
     # -- brain API ---------------------------------------------------------
 
+    def perceive(self, monster: Monster, engine: GameEngine) -> dict:
+        """Delegate perception to the canonical tabular sensor.
+
+        Not part of the Brain ABC, but required by ``RecordingBrain``
+        and any other wrapper that needs to extract features from the
+        brain's inputs.
+        """
+        return self._sensor.perceive(monster, engine)
+
     def choose_action(self, monster: Monster,
                       engine: GameEngine) -> tuple[Action, dict]:
         """Run perception → ONNX inference → masked action selection."""

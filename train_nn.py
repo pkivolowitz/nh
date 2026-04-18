@@ -58,43 +58,136 @@ class QMLP(nn.Module):
         return self.net(x)
 
 
-def load_trajectories(path: str) -> dict[str, dict[str, np.ndarray]]:
-    """Parse the JSONL file into per-species numpy arrays.
+def load_trajectories(paths: list[str],
+                      max_per_species: Optional[int] = None) -> dict[str, dict[str, np.ndarray]]:
+    """Parse one or more JSONL files into per-species numpy arrays.
 
-    Returns a dict ``species → {s, a, r, sp, d, m, mp}`` where each
-    value is a stacked numpy array ready for tensor conversion.
+    Memory-efficient two-pass loader: pass 1 counts lines per species,
+    pass 2 allocates numpy arrays upfront and parses each record
+    directly into them.  This avoids the memory blowup of building
+    Python lists of floats (~28 bytes per element) before converting.
+
+    If *max_per_species* is set, randomly subsamples that many records
+    per species, which makes giant combined corpora fit in RAM.
+
+    Records with mismatched feature dimensions are skipped (stale
+    corpora from earlier architectures).  Returns a dict
+    ``species → {s, a, r, sp, d, m, mp}``.
     """
-    per_species: dict[str, dict[str, list]] = defaultdict(
-        lambda: {"s": [], "a": [], "r": [], "sp": [],
-                 "d": [], "m": [], "mp": []},
-    )
-    with open(os.path.expanduser(path), "r") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            rec = json.loads(line)
-            sp_name = rec["species"]
-            bucket = per_species[sp_name]
-            bucket["s"].append(rec["s"])
-            bucket["a"].append(rec["a"])
-            bucket["r"].append(rec["r"])
-            bucket["sp"].append(rec["sp"])
-            bucket["d"].append(rec["d"])
-            bucket["m"].append(rec["m"])
-            bucket["mp"].append(rec["mp"])
+    # Pass 1: count valid records per species.
+    counts: dict[str, int] = defaultdict(int)
+    skipped: dict[str, int] = defaultdict(int)
+    expected_dims: dict[str, int] = {}
+    for path in paths:
+        with open(os.path.expanduser(path), "r") as f:
+            for line in f:
+                if not line:
+                    continue
+                # Cheap parse — just need species and feature length.
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                sp_name = rec.get("species")
+                if sp_name is None:
+                    continue
+                try:
+                    want = expected_dims.setdefault(
+                        sp_name, get_extractor(sp_name).feature_dim,
+                    )
+                except KeyError:
+                    continue
+                if len(rec["s"]) != want:
+                    skipped[sp_name] += 1
+                    continue
+                counts[sp_name] += 1
 
-    out: dict[str, dict[str, np.ndarray]] = {}
-    for name, b in per_species.items():
-        out[name] = {
-            "s": np.asarray(b["s"], dtype=np.float32),
-            "a": np.asarray(b["a"], dtype=np.int64),
-            "r": np.asarray(b["r"], dtype=np.float32),
-            "sp": np.asarray(b["sp"], dtype=np.float32),
-            "d": np.asarray(b["d"], dtype=np.bool_),
-            "m": np.asarray(b["m"], dtype=np.bool_),
-            "mp": np.asarray(b["mp"], dtype=np.bool_),
+    if skipped:
+        for sp, n in skipped.items():
+            print(f"[load] skipped {n} {sp} records with wrong feature dim",
+                  flush=True)
+
+    for sp, n in counts.items():
+        print(f"[load] {sp}: {n:,} valid records to load", flush=True)
+
+    # Decide per-species capacity, possibly subsampled.
+    capacity: dict[str, int] = {}
+    sample_indices: dict[str, Optional[np.ndarray]] = {}
+    rng = np.random.default_rng(12345)
+    for sp, n in counts.items():
+        if max_per_species is not None and n > max_per_species:
+            capacity[sp] = max_per_species
+            # Pick random indices to keep; parse in order and accept if in set.
+            keep = rng.choice(n, size=max_per_species, replace=False)
+            sample_indices[sp] = np.sort(keep)
+            print(f"[load] {sp}: subsampling {max_per_species:,} of {n:,}",
+                  flush=True)
+        else:
+            capacity[sp] = n
+            sample_indices[sp] = None
+
+    # Pass 2: allocate and fill.
+    per_species: dict[str, dict[str, np.ndarray]] = {}
+    fill_pos: dict[str, int] = {sp: 0 for sp in capacity}
+    seen_idx: dict[str, int] = {sp: 0 for sp in capacity}
+    sample_cursor: dict[str, int] = {sp: 0 for sp in capacity}
+    for sp in capacity:
+        dim = expected_dims[sp]
+        cap = capacity[sp]
+        per_species[sp] = {
+            "s": np.empty((cap, dim), dtype=np.float32),
+            "a": np.empty(cap, dtype=np.int64),
+            "r": np.empty(cap, dtype=np.float32),
+            "sp": np.empty((cap, dim), dtype=np.float32),
+            "d": np.empty(cap, dtype=np.bool_),
+            "m": np.empty((cap, NUM_ACTIONS), dtype=np.bool_),
+            "mp": np.empty((cap, NUM_ACTIONS), dtype=np.bool_),
         }
-    return out
+
+    for path in paths:
+        with open(os.path.expanduser(path), "r") as f:
+            for line in f:
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                sp_name = rec.get("species")
+                if sp_name is None or sp_name not in expected_dims:
+                    continue
+                if len(rec["s"]) != expected_dims[sp_name]:
+                    continue
+
+                cur_idx = seen_idx[sp_name]
+                seen_idx[sp_name] += 1
+                idx_keep = sample_indices[sp_name]
+                if idx_keep is not None:
+                    cursor = sample_cursor[sp_name]
+                    if cursor >= len(idx_keep) or idx_keep[cursor] != cur_idx:
+                        continue
+                    sample_cursor[sp_name] = cursor + 1
+
+                pos = fill_pos[sp_name]
+                bucket = per_species[sp_name]
+                bucket["s"][pos] = rec["s"]
+                bucket["a"][pos] = rec["a"]
+                bucket["r"][pos] = rec["r"]
+                bucket["sp"][pos] = rec["sp"]
+                bucket["d"][pos] = rec["d"]
+                bucket["m"][pos] = rec["m"]
+                bucket["mp"][pos] = rec["mp"]
+                fill_pos[sp_name] = pos + 1
+
+    # Trim to actual fill length in case pass 2 saw fewer records
+    # than pass 1 (files shouldn't change, but be safe).
+    for sp, bucket in per_species.items():
+        filled = fill_pos[sp]
+        if filled < capacity[sp]:
+            for key in bucket:
+                bucket[key] = bucket[key][:filled]
+
+    return per_species
 
 
 def train_species(species: str, data: dict[str, np.ndarray], *,
@@ -252,8 +345,12 @@ def train_species(species: str, data: dict[str, np.ndarray], *,
 
 def main() -> None:
     p = argparse.ArgumentParser(description="PNH offline DQN trainer")
-    p.add_argument("--trajectories", type=str, required=True,
-                   help="Path to the JSONL trajectory log")
+    p.add_argument("--trajectories", type=str, nargs="+", required=True,
+                   help="Path(s) to JSONL trajectory log(s); multiple files "
+                        "are concatenated")
+    p.add_argument("--max-per-species", type=int, default=None,
+                   help="Randomly subsample this many records per species "
+                        "(memory-friendly for giant corpora)")
     p.add_argument("--epochs", type=int, default=20)
     p.add_argument("--batch-size", type=int, default=512)
     p.add_argument("--lr", type=float, default=5e-4)
@@ -283,7 +380,8 @@ def main() -> None:
             device = "cpu"
     print(f"device: {device}")
 
-    all_data = load_trajectories(args.trajectories)
+    all_data = load_trajectories(args.trajectories,
+                                 max_per_species=args.max_per_species)
     if not all_data:
         print("no trajectories found", flush=True)
         return

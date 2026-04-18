@@ -18,6 +18,7 @@ __version__ = "0.1.0"
 import argparse
 import sys
 import time
+from typing import Optional
 
 from game.brain import BrainRegistry
 from game.engine import GameEngine
@@ -45,25 +46,46 @@ def _format_brain_stats(player_brain) -> str:
 
 def train(total_turns: int, per_game_cap: int,
           save_every: int, seed: int,
-          record_to: str = "") -> None:
+          record_to: str = "",
+          brain_mode: str = "tabular",
+          exploration: Optional[float] = None) -> None:
     """Run training games until *total_turns* player actions have elapsed.
 
     If *record_to* is non-empty, monster brains are wrapped in recording
     brains that append training tuples to that JSONL file.  The inner
-    tabular Q-tables still learn normally — the wrapper is transparent.
+    brain (tabular Q-table or PolicyBrain, selected by *brain_mode*)
+    still drives actions — the wrapper is transparent.
+
+    *exploration* optionally overrides the monster brain's epsilon for
+    the duration of the run.  Used for self-play bootstrapping: raise
+    epsilon so a trained policy explores beyond its current greedy
+    behavior, broadening the distribution of recorded transitions.
     """
     from game.ai_player import AIPlayer, PlayerBrain, AI_BRAIN_PATH
 
-    BrainRegistry.init()
+    BrainRegistry.init(mode=brain_mode)
     player_brain = PlayerBrain.load(AI_BRAIN_PATH)
 
     trajectory_logger = None
     if record_to:
-        from game.nn_brain import TrajectoryLogger, install_recording_brains
+        from game.nn_brain import (
+            TrajectoryLogger, install_recording_brains, PolicyBrain,
+        )
         trajectory_logger = TrajectoryLogger(record_to)
         install_recording_brains(trajectory_logger)
-        print(f"[train] logging trajectories to {trajectory_logger.path}",
-              flush=True)
+        if exploration is not None:
+            # Elevate epsilon on any PolicyBrain currently in the registry.
+            for name, b in BrainRegistry._brains.items():
+                inner = getattr(b, "inner", b)
+                if isinstance(inner, PolicyBrain):
+                    inner._epsilon = exploration
+        print(
+            f"[train] logging trajectories to {trajectory_logger.path} "
+            f"(mode={brain_mode}"
+            + (f", eps={exploration}" if exploration is not None else "")
+            + ")",
+            flush=True,
+        )
 
     turns_done: int = 0
     games_done: int = 0
@@ -142,9 +164,15 @@ def main() -> None:
                    help="Starting RNG seed; incremented per game")
     p.add_argument("--record-to", type=str, default="",
                    help="Path to JSONL trajectory log (omit to disable)")
+    p.add_argument("--brain-mode", choices=["tabular", "nn"], default="tabular",
+                   help="Monster brain mode during training (default tabular)")
+    p.add_argument("--exploration", type=float, default=None,
+                   help="Override monster-brain epsilon (self-play bootstrap)")
     args = p.parse_args()
     train(args.turns, args.per_game_cap, args.save_every, args.seed,
-          record_to=args.record_to)
+          record_to=args.record_to,
+          brain_mode=args.brain_mode,
+          exploration=args.exploration)
 
 
 if __name__ == "__main__":

@@ -53,14 +53,16 @@ class TestTrajectoryLogger:
     """Logger must emit well-formed JSON lines."""
 
     def test_log_writes_record(self, tmp_path):
+        from game.nn_features import RatFeatures
+        dim = RatFeatures().feature_dim
         path = str(tmp_path / "log.jsonl")
         with TrajectoryLogger(path) as log:
             log.log(
                 species="rat",
-                features=np.zeros(19, dtype=np.float32),
+                features=np.zeros(dim, dtype=np.float32),
                 action_idx=3,
                 reward=0.5,
-                next_features=np.ones(19, dtype=np.float32),
+                next_features=np.ones(dim, dtype=np.float32),
                 done=False,
                 legal_mask=np.ones(NUM_ACTIONS, dtype=bool),
                 next_legal_mask=np.ones(NUM_ACTIONS, dtype=bool),
@@ -73,19 +75,21 @@ class TestTrajectoryLogger:
         assert rec["a"] == 3
         assert rec["r"] == 0.5
         assert rec["d"] is False
-        assert len(rec["s"]) == 19
+        assert len(rec["s"]) == dim
         assert len(rec["m"]) == NUM_ACTIONS
 
     def test_multiple_records_each_one_line(self, tmp_path):
+        from game.nn_features import JackalFeatures
+        dim = JackalFeatures().feature_dim
         path = str(tmp_path / "log.jsonl")
         with TrajectoryLogger(path) as log:
             for i in range(5):
                 log.log(
                     species="jackal",
-                    features=np.zeros(21, dtype=np.float32),
+                    features=np.zeros(dim, dtype=np.float32),
                     action_idx=i % NUM_ACTIONS,
                     reward=float(i),
-                    next_features=np.zeros(21, dtype=np.float32),
+                    next_features=np.zeros(dim, dtype=np.float32),
                     done=bool(i == 4),
                     legal_mask=np.ones(NUM_ACTIONS, dtype=bool),
                     next_legal_mask=np.ones(NUM_ACTIONS, dtype=bool),
@@ -123,7 +127,8 @@ class TestRecordingBrain:
         assert len(lines) == 1
         rec = json.loads(lines[0])
         assert rec["species"] == "jackal"
-        assert len(rec["s"]) == 21
+        from game.nn_features import JackalFeatures
+        assert len(rec["s"]) == JackalFeatures().feature_dim
 
 
 class TestInstallRecordingBrains:

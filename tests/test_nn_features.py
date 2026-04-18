@@ -15,13 +15,17 @@ from game.nn_features import (
 
 
 class TestFeatureDimensions:
-    def test_jackal_dim_is_fixed(self):
+    def test_jackal_dim_matches_scalar_plus_grid(self):
+        from game.nn_features import GRID_DIM
         ext = JackalFeatures()
-        assert ext.feature_dim == 21
+        assert ext.feature_dim == ext.SCALAR_DIM + GRID_DIM
+        assert ext.SCALAR_DIM == 21
 
-    def test_rat_dim_is_fixed(self):
+    def test_rat_dim_matches_scalar_plus_grid(self):
+        from game.nn_features import GRID_DIM
         ext = RatFeatures()
-        assert ext.feature_dim == 19
+        assert ext.feature_dim == ext.SCALAR_DIM + GRID_DIM
+        assert ext.SCALAR_DIM == 19
 
 
 class TestFeatureValues:

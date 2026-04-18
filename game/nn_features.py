@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from game.actions import Action, Direction, DIRECTION_DELTA, DIRECTION_TO_ACTION
+from game.cell import CellBaseType
 from game.constants import BOARD_ROWS, BOARD_COLUMNS
 from game.coordinate import Coordinate
 
@@ -39,6 +40,78 @@ ACTION_ORDER: list[Action] = [
     Action.MOVE_NE, Action.MOVE_NW, Action.MOVE_SE, Action.MOVE_SW,
 ]
 NUM_ACTIONS: int = len(ACTION_ORDER)
+
+
+# ---------------------------------------------------------------------------
+# Local vision grid
+# ---------------------------------------------------------------------------
+
+# Centered odd-side grid — monster sits at the middle.  7 gives a 3-cell
+# radius which is enough to see through a doorway or down a corridor
+# without blowing up the feature dimension.
+GRID_SIDE: int = 7
+GRID_RADIUS: int = GRID_SIDE // 2
+
+# Channel layout (one-hot per cell).  Order matters: feature-dim math
+# depends on it.
+_GRID_CHANNEL_EMPTY: int = 0
+_GRID_CHANNEL_ROOM: int = 1
+_GRID_CHANNEL_CORRIDOR: int = 2
+_GRID_CHANNEL_WALL: int = 3
+_GRID_CHANNEL_DOOR: int = 4
+_GRID_CHANNEL_PLAYER: int = 5
+_GRID_CHANNEL_OTHER_MONSTER: int = 6
+_GRID_CHANNEL_LIT: int = 7
+GRID_CHANNELS: int = 8
+
+GRID_DIM: int = GRID_SIDE * GRID_SIDE * GRID_CHANNELS
+
+
+def _cell_type_to_channel(base_type: CellBaseType) -> int:
+    if base_type == CellBaseType.EMPTY:
+        return _GRID_CHANNEL_EMPTY
+    if base_type == CellBaseType.ROOM:
+        return _GRID_CHANNEL_ROOM
+    if base_type == CellBaseType.CORRIDOR:
+        return _GRID_CHANNEL_CORRIDOR
+    if base_type == CellBaseType.WALL:
+        return _GRID_CHANNEL_WALL
+    if base_type == CellBaseType.DOOR:
+        return _GRID_CHANNEL_DOOR
+    return _GRID_CHANNEL_EMPTY
+
+
+def extract_local_grid(monster: Monster,
+                       engine: GameEngine) -> np.ndarray:
+    """Return a (GRID_SIDE * GRID_SIDE * GRID_CHANNELS,) float32 vector.
+
+    The grid is centered on the monster, with out-of-bounds cells
+    encoded as WALL so the network treats edges like solid barriers.
+    Channels are one-hot per cell type, plus presence flags for the
+    player, other monsters, and lit state.
+    """
+    grid = np.zeros((GRID_SIDE, GRID_SIDE, GRID_CHANNELS), dtype=np.float32)
+    board = engine.board
+    player_pos = engine.player.pos
+
+    for gr in range(GRID_SIDE):
+        for gc in range(GRID_SIDE):
+            br = monster.pos.r + (gr - GRID_RADIUS)
+            bc = monster.pos.c + (gc - GRID_RADIUS)
+            if not (0 <= br < BOARD_ROWS and 0 <= bc < BOARD_COLUMNS):
+                grid[gr, gc, _GRID_CHANNEL_WALL] = 1.0
+                continue
+            cell = board.cells[br][bc]
+            grid[gr, gc, _cell_type_to_channel(cell.base_type)] = 1.0
+            if cell.lit:
+                grid[gr, gc, _GRID_CHANNEL_LIT] = 1.0
+            if br == player_pos.r and bc == player_pos.c:
+                grid[gr, gc, _GRID_CHANNEL_PLAYER] = 1.0
+            other = board.get_monster_at(Coordinate(br, bc))
+            if other is not None and other is not monster:
+                grid[gr, gc, _GRID_CHANNEL_OTHER_MONSTER] = 1.0
+
+    return grid.reshape(-1)
 
 
 # Distance bin buckets — kept in one place so features and tabular
@@ -98,20 +171,13 @@ class FeatureExtractor(ABC):
 class JackalFeatures(FeatureExtractor):
     """Jackal-shaped feature vector.
 
-    Layout (21 floats):
-        [0]     can_see_prey              (bool → 0/1)
-        [1:5]   prey_distance one-hot     (4 bins)
-        [5:8]   hp one-hot                (3 bins)
-        [8:11]  pack one-hot              (3 bins)
-        [11:14] hear one-hot              (3 bins)
-        [14:16] noise direction (dr, dc)  (-1, 0, 1 each)
-        [16]    smell detected            (bool → 0/1)
-        [17:19] scent direction (dr, dc)
-        [19]    own HP ratio              (0..1)
-        [20]    normalized player distance (dist / diagonal_of_board)
+    Layout:
+        scalar block (21 floats): perception + HP ratio + distance norm
+        spatial block (GRID_DIM floats): 7x7x8 local vision grid
     """
 
-    feature_dim: int = 21
+    SCALAR_DIM: int = 21
+    feature_dim: int = 21 + GRID_DIM
 
     _BOARD_DIAG: float = float(np.sqrt(BOARD_ROWS ** 2 + BOARD_COLUMNS ** 2))
 
@@ -129,10 +195,14 @@ class JackalFeatures(FeatureExtractor):
         raw_dist = monster.pos.distance(engine.player.pos)
         dist_norm = min(1.0, raw_dist / self._BOARD_DIAG)
 
-        vec = [can_see] + dist_oh + hp_oh + pack_oh + hear_oh
-        vec += [float(ndr), float(ndc), smell, float(sdr), float(sdc)]
-        vec += [hp_ratio, dist_norm]
-        out = np.asarray(vec, dtype=np.float32)
+        scalar = [can_see] + dist_oh + hp_oh + pack_oh + hear_oh
+        scalar += [float(ndr), float(ndc), smell, float(sdr), float(sdc)]
+        scalar += [hp_ratio, dist_norm]
+        scalar_arr = np.asarray(scalar, dtype=np.float32)
+        assert scalar_arr.shape == (self.SCALAR_DIM,), \
+            f"jackal scalar features got {scalar_arr.shape}"
+        grid = extract_local_grid(monster, engine)
+        out = np.concatenate([scalar_arr, grid], axis=0)
         assert out.shape == (self.feature_dim,), \
             f"jackal features got {out.shape}, expected ({self.feature_dim},)"
         return out
@@ -141,20 +211,13 @@ class JackalFeatures(FeatureExtractor):
 class RatFeatures(FeatureExtractor):
     """Rat-shaped feature vector.
 
-    Layout (19 floats):
-        [0]     can_see_prey              (bool → 0/1)
-        [1:5]   prey_distance one-hot     (4 bins)
-        [5:8]   hp one-hot                (3 bins)
-        [8]     food_nearby               (bool → 0/1)
-        [9:11]  food direction (dr, dc)
-        [11:14] escape routes one-hot     (3 bins)
-        [14]    smell_predator            (bool → 0/1)
-        [15:17] predator scent (dr, dc)
-        [17]    own HP ratio              (0..1)
-        [18]    normalized player distance
+    Layout:
+        scalar block (19 floats): perception + HP ratio + distance norm
+        spatial block (GRID_DIM floats): 7x7x8 local vision grid
     """
 
-    feature_dim: int = 19
+    SCALAR_DIM: int = 19
+    feature_dim: int = 19 + GRID_DIM
 
     _BOARD_DIAG: float = float(np.sqrt(BOARD_ROWS ** 2 + BOARD_COLUMNS ** 2))
 
@@ -172,9 +235,14 @@ class RatFeatures(FeatureExtractor):
         raw_dist = monster.pos.distance(engine.player.pos)
         dist_norm = min(1.0, raw_dist / self._BOARD_DIAG)
 
-        vec = [can_see] + dist_oh + hp_oh + [food, float(fdr), float(fdc)]
-        vec += esc_oh + [smell_pred, float(sdr), float(sdc), hp_ratio, dist_norm]
-        out = np.asarray(vec, dtype=np.float32)
+        scalar = [can_see] + dist_oh + hp_oh + [food, float(fdr), float(fdc)]
+        scalar += esc_oh + [smell_pred, float(sdr), float(sdc),
+                            hp_ratio, dist_norm]
+        scalar_arr = np.asarray(scalar, dtype=np.float32)
+        assert scalar_arr.shape == (self.SCALAR_DIM,), \
+            f"rat scalar features got {scalar_arr.shape}"
+        grid = extract_local_grid(monster, engine)
+        out = np.concatenate([scalar_arr, grid], axis=0)
         assert out.shape == (self.feature_dim,), \
             f"rat features got {out.shape}, expected ({self.feature_dim},)"
         return out
