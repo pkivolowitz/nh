@@ -901,11 +901,16 @@ class GameEngine:
         BrainRegistry.init()
         # Re-register any brain instances that were serialized with
         # monster species so the registry can save them at shutdown.
+        # Also backfill any attributes that were added to Monster /
+        # Creature after the save was pickled — saves from older
+        # revisions must keep working.
         for board in engine.boards:
             for monster in board.get_all_monsters():
                 species = monster.species
                 if species._brain is not None:
                     BrainRegistry._brains[species.name] = species._brain
+                if not hasattr(monster, "senses"):
+                    monster.senses = species.senses
         return engine
 
     @classmethod

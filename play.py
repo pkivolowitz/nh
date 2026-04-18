@@ -45,20 +45,33 @@ def parse_args() -> argparse.Namespace:
                    help="Milliseconds between AI actions (default 100)")
     p.add_argument("--brain-mode", choices=["tabular", "nn"], default=None,
                    help="Monster brain mode; overrides PNH_BRAIN_MODE env var")
+    p.add_argument("--ai-mode", choices=["rule", "nn"], default="rule",
+                   help="AI player brain: rule-based planner or ONNX policy")
     return p.parse_args()
 
 
 def _ai_loop(engine: GameEngine, renderer: Renderer,
-             speed_ms: int) -> None:
+             speed_ms: int, ai_mode: str = "rule") -> None:
     """Let the AI player drive the game.  Press 'q' to quit.
 
-    Loads the persistent AI brain on entry and saves it on exit so
-    interactive watch sessions contribute to long-term learning.
+    *ai_mode* is ``"rule"`` (default rule-based planner with persistent
+    PlayerBrain) or ``"nn"`` (ONNX dueling policy).  Loads persistent
+    state on entry and saves it on exit so interactive watch sessions
+    contribute to long-term learning.
     """
-    from game.ai_player import AIPlayer, PlayerBrain, AI_BRAIN_PATH
+    from game.ai_player import (
+        AIPlayer, PolicyAIPlayer, PlayerBrain, AI_BRAIN_PATH,
+    )
 
     brain = PlayerBrain.load(AI_BRAIN_PATH)
-    ai = AIPlayer(brain=brain)
+    if ai_mode == "nn":
+        ai = PolicyAIPlayer(brain=brain)
+        if not ai.has_model:
+            renderer.show_message(
+                "No ONNX player model found — falling back to random actions."
+            )
+    else:
+        ai = AIPlayer(brain=brain)
     speed_sec = speed_ms / 1000.0
 
     while True:
@@ -78,10 +91,15 @@ def _ai_loop(engine: GameEngine, renderer: Renderer,
             engine.turn_counter,
         )
 
-        # Show what the AI is thinking + its learning stats.
-        msg = f"AI: {ai.thought}  [{ai.stats_str}]"
+        # Show what the AI is thinking.  Truncate to one line so the
+        # renderer does not open a blocking "--More--" pager between
+        # every turn.
+        from game.constants import BOARD_COLUMNS
+        msg = f"AI: {ai.thought}"
         if result.message:
             msg = f"{result.message}  |  {msg}"
+        if len(msg) >= BOARD_COLUMNS:
+            msg = msg[:BOARD_COLUMNS - 2] + "…"
         renderer.show_message(msg)
 
         # Player died.
@@ -151,7 +169,7 @@ def _main(stdscr: curses.window) -> None:
 
     # AI mode.
     if args.ai:
-        _ai_loop(engine, renderer, args.ai_speed)
+        _ai_loop(engine, renderer, args.ai_speed, ai_mode=args.ai_mode)
         BrainRegistry.save_all()
         return
 

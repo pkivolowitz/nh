@@ -18,18 +18,20 @@ from __future__ import annotations
 __version__ = "0.1.0"
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from enum import IntEnum
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
 from game.actions import Action, Direction, DIRECTION_DELTA, DIRECTION_TO_ACTION
-from game.cell import CellBaseType
+from game.cell import CellBaseType, DoorState
 from game.constants import BOARD_ROWS, BOARD_COLUMNS
 from game.coordinate import Coordinate
 
 if TYPE_CHECKING:
     from game.engine import GameEngine
     from game.monster import Monster
+    from game.player import Player
 
 
 # The NN always outputs Q-values over this fixed action space.  Order
@@ -248,15 +250,352 @@ class RatFeatures(FeatureExtractor):
         return out
 
 
-# Registry: species name → extractor instance.
-_EXTRACTORS: dict[str, FeatureExtractor] = {
+# Registry: species name → extractor instance.  "player" is included
+# so the trainer can consume player trajectories with the same loader
+# that handles monster species.
+_EXTRACTORS: dict[str, object] = {
     "jackal": JackalFeatures(),
     "rat": RatFeatures(),
 }
 
 
-def get_extractor(species_name: str) -> FeatureExtractor:
-    """Look up the feature extractor for a species.  Raises if unknown."""
+def get_extractor(species_name: str):
+    """Look up the feature extractor for a species.  Raises if unknown.
+
+    The return type is the species-specific FeatureExtractor subclass
+    for monsters, or PlayerFeatures for the player.  All extractors
+    expose ``feature_dim`` and ``SCALAR_DIM``; monster extractors also
+    expose the 9-action ``legal_action_mask`` while PlayerFeatures
+    uses the 17-action space.
+    """
+    if species_name == "player":
+        return PlayerFeatures()
     if species_name not in _EXTRACTORS:
         raise KeyError(f"no feature extractor registered for {species_name!r}")
     return _EXTRACTORS[species_name]
+
+
+# ---------------------------------------------------------------------------
+# Player feature extractor & action space
+# ---------------------------------------------------------------------------
+
+# The player's grid is larger than the monsters' — they have to plan,
+# not just react — and carries more channels because the player cares
+# about items, stairs, and lighting that monsters largely ignore.
+PLAYER_GRID_SIDE: int = 15
+PLAYER_GRID_RADIUS: int = PLAYER_GRID_SIDE // 2
+
+_PGRID_EMPTY: int = 0
+_PGRID_ROOM: int = 1
+_PGRID_CORRIDOR: int = 2
+_PGRID_WALL: int = 3
+_PGRID_DOOR_OPEN: int = 4
+_PGRID_DOOR_CLOSED: int = 5
+_PGRID_MONSTER: int = 6
+_PGRID_ITEM: int = 7
+_PGRID_STAIRS_DOWN: int = 8
+_PGRID_STAIRS_UP: int = 9
+_PGRID_LIT: int = 10
+PLAYER_GRID_CHANNELS: int = 11
+PLAYER_GRID_DIM: int = (
+    PLAYER_GRID_SIDE * PLAYER_GRID_SIDE * PLAYER_GRID_CHANNELS
+)
+
+
+class PlayerAction(IntEnum):
+    """Compact action space for the player-policy network.
+
+    Indices map 1:1 to network output positions.  The engine-level
+    Action and its kwargs are reconstructed by ``decode_player_action``
+    — e.g. CAST_FIRE targets the nearest visible monster automatically.
+    """
+
+    WAIT = 0
+    MOVE_N = 1
+    MOVE_S = 2
+    MOVE_E = 3
+    MOVE_W = 4
+    MOVE_NE = 5
+    MOVE_NW = 6
+    MOVE_SE = 7
+    MOVE_SW = 8
+    PICKUP = 9
+    STAIRS_DOWN = 10
+    STAIRS_UP = 11
+    OPEN_N = 12
+    OPEN_S = 13
+    OPEN_E = 14
+    OPEN_W = 15
+    CAST_FIRE = 16
+
+
+NUM_PLAYER_ACTIONS: int = len(PlayerAction)
+
+
+# Reverse map: PlayerAction → (engine Action, direction).  CAST_FIRE
+# is handled specially because it also needs a target coordinate.
+_PLAYER_ACTION_MAP: dict[int, tuple[Action, Direction]] = {
+    PlayerAction.WAIT: (Action.WAIT, Direction.NONE),
+    PlayerAction.MOVE_N: (Action.MOVE_N, Direction.N),
+    PlayerAction.MOVE_S: (Action.MOVE_S, Direction.S),
+    PlayerAction.MOVE_E: (Action.MOVE_E, Direction.E),
+    PlayerAction.MOVE_W: (Action.MOVE_W, Direction.W),
+    PlayerAction.MOVE_NE: (Action.MOVE_NE, Direction.NE),
+    PlayerAction.MOVE_NW: (Action.MOVE_NW, Direction.NW),
+    PlayerAction.MOVE_SE: (Action.MOVE_SE, Direction.SE),
+    PlayerAction.MOVE_SW: (Action.MOVE_SW, Direction.SW),
+    PlayerAction.PICKUP: (Action.PICKUP, Direction.NONE),
+    PlayerAction.STAIRS_DOWN: (Action.STAIRS_DOWN, Direction.NONE),
+    PlayerAction.STAIRS_UP: (Action.STAIRS_UP, Direction.NONE),
+    PlayerAction.OPEN_N: (Action.OPEN_DOOR, Direction.N),
+    PlayerAction.OPEN_S: (Action.OPEN_DOOR, Direction.S),
+    PlayerAction.OPEN_E: (Action.OPEN_DOOR, Direction.E),
+    PlayerAction.OPEN_W: (Action.OPEN_DOOR, Direction.W),
+}
+
+
+def _nearest_visible_monster(engine: GameEngine) -> Optional[Coordinate]:
+    """Closest monster with clear LOS from the player.  None if invisible."""
+    from math import inf
+    best: Optional[Coordinate] = None
+    best_d: float = inf
+    player_pos = engine.player.pos
+    for m in engine.board.get_all_monsters():
+        if not m.is_alive:
+            continue
+        if not engine.board.line_of_sight(player_pos, m.pos):
+            continue
+        d = player_pos.distance(m.pos)
+        if d < best_d:
+            best_d = d
+            best = m.pos
+    return best
+
+
+def decode_player_action(pa: int, engine: GameEngine) -> tuple[Action, dict]:
+    """Translate a PlayerAction index to (engine Action, kwargs)."""
+    from game.magic import MagicSchool
+    if pa == PlayerAction.CAST_FIRE:
+        target = _nearest_visible_monster(engine)
+        # No visible target → fizzle in a direction (N) so the engine
+        # still processes the action; the NN shouldn't choose this
+        # when no target exists, but guard anyway.
+        if target is None:
+            return Action.CAST, {
+                "school": MagicSchool.FIRE, "direction": Direction.N,
+            }
+        return Action.CAST, {
+            "school": MagicSchool.FIRE, "target_pos": target,
+        }
+    action, direction = _PLAYER_ACTION_MAP[pa]
+    kwargs: dict = {}
+    if direction != Direction.NONE:
+        kwargs["direction"] = direction
+    return action, kwargs
+
+
+def _player_cell_channel(cell) -> int:
+    """Map a Cell to the primary player-grid channel."""
+    if cell.base_type == CellBaseType.EMPTY:
+        return _PGRID_EMPTY
+    if cell.base_type == CellBaseType.ROOM:
+        return _PGRID_ROOM
+    if cell.base_type == CellBaseType.CORRIDOR:
+        return _PGRID_CORRIDOR
+    if cell.base_type == CellBaseType.WALL:
+        return _PGRID_WALL
+    if cell.base_type == CellBaseType.DOOR:
+        if cell.door_state == DoorState.DOOR_CLOSED \
+                or cell.door_state == DoorState.DOOR_LOCKED \
+                or cell.door_state == DoorState.DOOR_STUCK:
+            return _PGRID_DOOR_CLOSED
+        return _PGRID_DOOR_OPEN
+    return _PGRID_EMPTY
+
+
+def _extract_player_local_grid(player: Player,
+                               engine: GameEngine) -> np.ndarray:
+    """15x15x11 one-hot local view around the player."""
+    import numpy as _np
+    grid = _np.zeros(
+        (PLAYER_GRID_SIDE, PLAYER_GRID_SIDE, PLAYER_GRID_CHANNELS),
+        dtype=_np.float32,
+    )
+    board = engine.board
+    # Stairs positions so we can mark their channel when visible.
+    try:
+        down_pos: Optional[Coordinate] = board.downstairs
+    except AttributeError:
+        down_pos = None
+    try:
+        up_pos: Optional[Coordinate] = board.upstairs
+    except AttributeError:
+        up_pos = None
+
+    for gr in range(PLAYER_GRID_SIDE):
+        for gc in range(PLAYER_GRID_SIDE):
+            br = player.pos.r + (gr - PLAYER_GRID_RADIUS)
+            bc = player.pos.c + (gc - PLAYER_GRID_RADIUS)
+            if not (0 <= br < BOARD_ROWS and 0 <= bc < BOARD_COLUMNS):
+                grid[gr, gc, _PGRID_WALL] = 1.0
+                continue
+            cell = board.cells[br][bc]
+            grid[gr, gc, _player_cell_channel(cell)] = 1.0
+            if cell.lit:
+                grid[gr, gc, _PGRID_LIT] = 1.0
+            coord = Coordinate(br, bc)
+            mon = board.get_monster_at(coord)
+            if mon is not None and mon.is_alive:
+                grid[gr, gc, _PGRID_MONSTER] = 1.0
+            if coord in board.goodies and board.goodies[coord]:
+                grid[gr, gc, _PGRID_ITEM] = 1.0
+            if down_pos is not None and coord == down_pos:
+                grid[gr, gc, _PGRID_STAIRS_DOWN] = 1.0
+            if up_pos is not None and coord == up_pos:
+                grid[gr, gc, _PGRID_STAIRS_UP] = 1.0
+
+    return grid.reshape(-1)
+
+
+class PlayerFeatures:
+    """Feature extractor for the player policy network.
+
+    Layout:
+        scalar block (16 floats): HP / concentration / XP / level,
+            school-known flags (7), fire tier, weight ratio, item
+            count ratio, turn counter, visible-monster-count ratio.
+        spatial block (15x15x11 floats): local one-hot grid.
+    """
+
+    SCALAR_DIM: int = 16
+    feature_dim: int = 16 + PLAYER_GRID_DIM
+
+    def extract(self, player: Player, engine: GameEngine) -> np.ndarray:
+        import numpy as _np
+        from game.magic import MagicSchool, ProficiencyTier, TIER_THRESHOLDS
+        from game.player import Trait
+
+        hp_max = player.max_hp if player.max_hp > 0 else 1
+        hp_ratio = float(player.hp) / hp_max
+        con_max = max(1, player.maximum_traits[Trait.CONCENTRATION])
+        con_ratio = (
+            float(player.current_traits[Trait.CONCENTRATION]) / con_max
+        )
+        xp = float(player.current_traits[Trait.EXPERIENCE])
+        xp_norm = min(1.0, xp / 1000.0)
+        lvl = float(player.current_traits[Trait.LEVEL])
+        lvl_norm = min(1.0, lvl / 10.0)
+
+        known_flags: list[float] = []
+        for school in MagicSchool:
+            state = player.magic.schools.get(school)
+            known_flags.append(1.0 if (state and state.known) else 0.0)
+
+        fire_state = player.magic.schools[MagicSchool.FIRE]
+        fire_tier_norm = float(fire_state.tier) / 4.0 if fire_state.known else 0.0
+
+        weight = player.weight_of_inventory()
+        max_wt = max(1, player.max_carry_weight())
+        weight_ratio = min(1.0, weight / max_wt)
+        items_norm = player.inventory_count() / 52.0
+        turn_norm = min(1.0, engine.turn_counter / 2000.0)
+
+        # Count visible monsters (with LOS) to give the NN a
+        # coarse "how hot is this room".
+        vis_count = 0
+        for m in engine.board.get_all_monsters():
+            if m.is_alive and engine.board.line_of_sight(player.pos, m.pos):
+                vis_count += 1
+        vis_norm = min(1.0, vis_count / 5.0)
+
+        scalar = [
+            hp_ratio, con_ratio, xp_norm, lvl_norm,
+            *known_flags,            # 7 floats
+            fire_tier_norm,
+            weight_ratio, items_norm, turn_norm, vis_norm,
+        ]
+        scalar_arr = _np.asarray(scalar, dtype=_np.float32)
+        assert scalar_arr.shape == (self.SCALAR_DIM,), (
+            f"player scalar got {scalar_arr.shape}, "
+            f"expected ({self.SCALAR_DIM},)"
+        )
+        grid = _extract_player_local_grid(player, engine)
+        out = _np.concatenate([scalar_arr, grid], axis=0)
+        assert out.shape == (self.feature_dim,), (
+            f"player features got {out.shape}, "
+            f"expected ({self.feature_dim},)"
+        )
+        return out
+
+    @staticmethod
+    def legal_action_mask(player: Player,
+                          engine: GameEngine) -> np.ndarray:
+        """Boolean mask over NUM_PLAYER_ACTIONS marking legal actions."""
+        from game.magic import MagicSchool, SCHOOL_BASE_COST
+        from game.player import Trait
+
+        import numpy as _np
+        mask = _np.zeros(NUM_PLAYER_ACTIONS, dtype=bool)
+        mask[PlayerAction.WAIT] = True
+
+        # Movement: legal into navigable cells or player-on-monster bump.
+        for pa_idx, (a, d) in _PLAYER_ACTION_MAP.items():
+            if a not in (Action.MOVE_N, Action.MOVE_S, Action.MOVE_E,
+                         Action.MOVE_W, Action.MOVE_NE, Action.MOVE_NW,
+                         Action.MOVE_SE, Action.MOVE_SW):
+                continue
+            dr, dc = DIRECTION_DELTA[d]
+            nr, nc = player.pos.r + dr, player.pos.c + dc
+            if not (0 <= nr < BOARD_ROWS and 0 <= nc < BOARD_COLUMNS):
+                continue
+            target = Coordinate(nr, nc)
+            cell = engine.board.cells[nr][nc]
+            # Closed door → not a normal legal move (must OPEN first).
+            if cell.base_type == CellBaseType.DOOR and cell.door_state in (
+                DoorState.DOOR_CLOSED,
+                DoorState.DOOR_LOCKED,
+                DoorState.DOOR_STUCK,
+            ):
+                continue
+            if engine.board.is_navigable(target):
+                mask[pa_idx] = True
+            elif engine.board.get_monster_at(target) is not None:
+                # Melee bump — legal.
+                mask[pa_idx] = True
+
+        # PICKUP — items present under the player.
+        if player.pos in engine.board.goodies \
+                and engine.board.goodies[player.pos]:
+            mask[PlayerAction.PICKUP] = True
+
+        # Stairs.
+        if engine.board.is_downstairs(player.pos):
+            mask[PlayerAction.STAIRS_DOWN] = True
+        if engine.board.is_upstairs(player.pos):
+            mask[PlayerAction.STAIRS_UP] = True
+
+        # Open door NSEW — closed door in that direction.
+        for pa_idx, (a, d) in _PLAYER_ACTION_MAP.items():
+            if a != Action.OPEN_DOOR:
+                continue
+            dr, dc = DIRECTION_DELTA[d]
+            nr, nc = player.pos.r + dr, player.pos.c + dc
+            if not (0 <= nr < BOARD_ROWS and 0 <= nc < BOARD_COLUMNS):
+                continue
+            cell = engine.board.cells[nr][nc]
+            if cell.base_type == CellBaseType.DOOR and cell.door_state in (
+                DoorState.DOOR_CLOSED,
+                DoorState.DOOR_LOCKED,
+                DoorState.DOOR_STUCK,
+            ):
+                mask[pa_idx] = True
+
+        # Fire cast — known school, enough concentration, visible target.
+        fire = player.magic.schools[MagicSchool.FIRE]
+        if fire.known:
+            cost = SCHOOL_BASE_COST[MagicSchool.FIRE]
+            if player.current_traits[Trait.CONCENTRATION] >= cost:
+                if _nearest_visible_monster(engine) is not None:
+                    mask[PlayerAction.CAST_FIRE] = True
+
+        return mask

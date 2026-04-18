@@ -52,6 +52,63 @@ CTX_DEFAULT = "default"
 # Persistence path for the AI player's cross-game brain.
 AI_BRAIN_PATH: str = "~/.pnh/brains/ai_player.json"
 
+# ONNX model path for the player policy network.
+PLAYER_MODEL_PATH: str = "~/.pnh/models/player.onnx"
+
+
+def _engine_action_to_player_action_idx(action: Action,
+                                        kwargs: dict) -> Optional[int]:
+    """Map (engine Action, kwargs) back to the PlayerAction enum index.
+
+    Returns None for actions the player-policy action space can't
+    represent (e.g. KICK_DOOR) — those transitions are dropped from
+    the trajectory log rather than logged with an invalid action.
+    """
+    from game.actions import Action as _A
+    from game.nn_features import PlayerAction
+
+    if action == _A.WAIT:
+        return int(PlayerAction.WAIT)
+    if action == _A.MOVE_N:
+        return int(PlayerAction.MOVE_N)
+    if action == _A.MOVE_S:
+        return int(PlayerAction.MOVE_S)
+    if action == _A.MOVE_E:
+        return int(PlayerAction.MOVE_E)
+    if action == _A.MOVE_W:
+        return int(PlayerAction.MOVE_W)
+    if action == _A.MOVE_NE:
+        return int(PlayerAction.MOVE_NE)
+    if action == _A.MOVE_NW:
+        return int(PlayerAction.MOVE_NW)
+    if action == _A.MOVE_SE:
+        return int(PlayerAction.MOVE_SE)
+    if action == _A.MOVE_SW:
+        return int(PlayerAction.MOVE_SW)
+    if action == _A.PICKUP:
+        return int(PlayerAction.PICKUP)
+    if action == _A.STAIRS_DOWN:
+        return int(PlayerAction.STAIRS_DOWN)
+    if action == _A.STAIRS_UP:
+        return int(PlayerAction.STAIRS_UP)
+    if action == _A.OPEN_DOOR:
+        d = kwargs.get("direction")
+        if d == Direction.N:
+            return int(PlayerAction.OPEN_N)
+        if d == Direction.S:
+            return int(PlayerAction.OPEN_S)
+        if d == Direction.E:
+            return int(PlayerAction.OPEN_E)
+        if d == Direction.W:
+            return int(PlayerAction.OPEN_W)
+        return None  # Diagonal door: outside action space.
+    if action == _A.CAST:
+        from game.magic import MagicSchool
+        if kwargs.get("school") == MagicSchool.FIRE:
+            return int(PlayerAction.CAST_FIRE)
+        return None  # Other schools aren't in the action space yet.
+    return None  # KICK_DOOR, CLOSE_DOOR, READ, DROP — not modelled.
+
 
 class PlayerBrain:
     """Cross-game persistent knowledge for the AI player.
@@ -273,6 +330,15 @@ class AIPlayer:
         self._last_context: str = ""
         self._items_collected: int = 0
         self._levels_cleared: list[int] = []
+        # Trajectory logging for offline NN training.  When set, each
+        # action the agent takes is written as a (s, a, r, s', done)
+        # record keyed by species="player" so the same trainer that
+        # consumes monster logs can consume these.
+        self.trajectory_logger: Optional[object] = None
+        self._last_engine_ref: Optional[GameEngine] = None
+        self._last_features = None
+        self._last_mask = None
+        self._last_player_action_idx: Optional[int] = None
 
     @property
     def model(self) -> WorldModel:
@@ -312,6 +378,19 @@ class AIPlayer:
         self._last_action_cat = self._action_category(action)
         self._last_context = self._get_context(engine)
         self.model.total_actions += 1
+
+        # -- snapshot features for trajectory logging -----------------
+        if self.trajectory_logger is not None:
+            from game.nn_features import PlayerFeatures
+            ext = PlayerFeatures()
+            self._last_engine_ref = engine
+            self._last_features = ext.extract(engine.player, engine)
+            self._last_mask = PlayerFeatures.legal_action_mask(
+                engine.player, engine,
+            )
+            self._last_player_action_idx = _engine_action_to_player_action_idx(
+                action, kwargs,
+            )
 
         return action, kwargs
 
@@ -391,6 +470,45 @@ class AIPlayer:
             gained: int = int(result.reward)
             self._items_collected += gained
             self.brain.items_collected += gained
+
+        # Trajectory logging — capture (s, a, r, s', done, masks)
+        # after engine.step has advanced the world state.
+        if (self.trajectory_logger is not None
+                and self._last_features is not None
+                and self._last_player_action_idx is not None
+                and self._last_engine_ref is not None):
+            from game.nn_features import (
+                PlayerFeatures, NUM_PLAYER_ACTIONS,
+            )
+            import numpy as _np
+            engine = self._last_engine_ref
+            if engine.player.is_alive:
+                ext = PlayerFeatures()
+                next_features = ext.extract(engine.player, engine)
+                next_mask = PlayerFeatures.legal_action_mask(
+                    engine.player, engine,
+                )
+                done = bool(result.done)
+            else:
+                next_features = _np.zeros_like(self._last_features)
+                next_mask = _np.zeros(NUM_PLAYER_ACTIONS, dtype=bool)
+                done = True
+            self.trajectory_logger.log(
+                species="player",
+                features=self._last_features,
+                action_idx=self._last_player_action_idx,
+                reward=float(result.reward),
+                next_features=next_features,
+                done=done,
+                legal_mask=self._last_mask,
+                next_legal_mask=next_mask,
+            )
+
+        # Clear the snapshot so an un-logged action doesn't
+        # accidentally reuse stale state.
+        self._last_features = None
+        self._last_mask = None
+        self._last_player_action_idx = None
 
     # -- planning ----------------------------------------------------------
 
@@ -727,4 +845,119 @@ class AIPlayer:
             f"Known:{n_known} Visited:{n_visited} "
             f"Items:{n_items} Transitions:{n_transitions} "
             f"Collected:{self._items_collected}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Neural-network player: ONNX-driven policy
+# ---------------------------------------------------------------------------
+
+class PolicyAIPlayer:
+    """AI player that drives from an ONNX Q-network.
+
+    Implements the same ``choose_action`` / ``_learn_reward`` interface
+    as ``AIPlayer`` so it drops into the existing game loop.  When no
+    model file is present it falls back to a masked-random policy —
+    the player still moves, just without learned behavior.  Perception
+    reuses ``PlayerFeatures``; action decoding reuses the
+    ``PlayerAction`` enum from ``nn_features``.
+    """
+
+    def __init__(self, model_path: str = PLAYER_MODEL_PATH,
+                 epsilon: float = 0.0,
+                 brain: Optional[PlayerBrain] = None) -> None:
+        self.brain: PlayerBrain = brain if brain is not None else PlayerBrain()
+        self._epsilon: float = epsilon
+        self._session = None
+        self._input_name: Optional[str] = None
+        self._output_name: Optional[str] = None
+        self.model_path: str = os.path.expanduser(model_path)
+        self._try_load_model()
+        # Display-only attributes, matched to AIPlayer so the renderer's
+        # message line is compatible.
+        self._thought: str = ""
+        self._items_collected: int = 0
+        # Matches AIPlayer's _learn_reward signature.
+        self._last_action: Optional[Action] = None
+
+    # -- model loading -----------------------------------------------------
+
+    def _try_load_model(self) -> None:
+        """Load the ONNX session; silently degrade to random on failure."""
+        import onnxruntime as ort
+        if not os.path.exists(self.model_path):
+            logger.debug("no player ONNX model at %s; using random fallback",
+                         self.model_path)
+            return
+        try:
+            providers = ort.get_available_providers()
+            preferred = [p for p in ("CoreMLExecutionProvider",
+                                     "CUDAExecutionProvider",
+                                     "DmlExecutionProvider")
+                         if p in providers]
+            preferred.append("CPUExecutionProvider")
+            self._session = ort.InferenceSession(
+                self.model_path, providers=preferred,
+            )
+            self._input_name = self._session.get_inputs()[0].name
+            self._output_name = self._session.get_outputs()[0].name
+            logger.info("PolicyAIPlayer loaded %s with providers %s",
+                        self.model_path, self._session.get_providers())
+        except Exception as exc:
+            logger.warning("failed to load player ONNX model %s: %s",
+                           self.model_path, exc)
+            self._session = None
+
+    @property
+    def has_model(self) -> bool:
+        return self._session is not None
+
+    # -- AIPlayer-compatible interface -------------------------------------
+
+    def choose_action(self, engine: GameEngine) -> tuple[Action, dict]:
+        """Perceive → forward-pass → mask illegal → decode → execute."""
+        import random as _r
+        from game.nn_features import (
+            PlayerFeatures, NUM_PLAYER_ACTIONS, PlayerAction,
+            decode_player_action,
+        )
+        import numpy as _np
+
+        ext = PlayerFeatures()
+        features = ext.extract(engine.player, engine)
+        mask = PlayerFeatures.legal_action_mask(engine.player, engine)
+
+        if not mask.any():
+            chosen_idx = int(PlayerAction.WAIT)
+        elif self._session is None or _r.random() < self._epsilon:
+            legal = _np.nonzero(mask)[0]
+            chosen_idx = int(_r.choice(legal))
+        else:
+            q = self._session.run(
+                [self._output_name],
+                {self._input_name: features.reshape(1, -1)},
+            )[0].reshape(-1).copy()
+            q[~mask] = -_np.inf
+            chosen_idx = int(_np.argmax(q))
+
+        self._last_action = chosen_idx
+        self._thought = f"NN picked {PlayerAction(chosen_idx).name}"
+        return decode_player_action(chosen_idx, engine)
+
+    def _learn_reward(self, result: StepResult) -> None:
+        """Track lifetime items collected; no online NN update."""
+        if result.reward > 0:
+            gained = int(result.reward)
+            self._items_collected += gained
+            self.brain.items_collected += gained
+
+    @property
+    def thought(self) -> str:
+        return self._thought
+
+    @property
+    def stats_str(self) -> str:
+        return (
+            f"NN model={'✓' if self.has_model else '✗'} "
+            f"items={self._items_collected}"
         )

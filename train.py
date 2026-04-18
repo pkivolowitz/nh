@@ -98,6 +98,8 @@ def train(total_turns: int, per_game_cap: int,
         engine = GameEngine(seed=next_seed)
         next_seed += 1
         ai = AIPlayer(brain=player_brain)
+        if trajectory_logger is not None:
+            ai.trajectory_logger = trajectory_logger
         game_turns: int = 0
 
         while game_turns < per_game_cap:

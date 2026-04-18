@@ -32,6 +32,8 @@ import torch.nn.functional as F
 from game.nn_features import (
     NUM_ACTIONS, get_extractor,
     GRID_SIDE, GRID_CHANNELS, GRID_DIM,
+    NUM_PLAYER_ACTIONS, PlayerFeatures,
+    PLAYER_GRID_SIDE, PLAYER_GRID_CHANNELS, PLAYER_GRID_DIM,
 )
 
 
@@ -124,15 +126,106 @@ class QGridCNN(nn.Module):
 
 
 def build_qnet(arch: str, feat_dim: int, scalar_dim: int,
-               hidden: int) -> nn.Module:
+               hidden: int, out_dim: int = NUM_ACTIONS) -> nn.Module:
     """Construct the Q-network specified by *arch*."""
     if arch == "mlp":
-        return QMLP(feat_dim, hidden=hidden)
+        return QMLP(feat_dim, hidden=hidden, out_dim=out_dim)
     if arch == "cnn":
         return QGridCNN(feat_dim, scalar_dim=scalar_dim,
                         scalar_hidden=hidden // 2,
-                        head_hidden=hidden)
+                        head_hidden=hidden,
+                        out_dim=out_dim)
+    if arch == "player":
+        return PlayerDuelingNet(feat_dim, scalar_dim=scalar_dim,
+                                out_dim=out_dim)
     raise ValueError(f"unknown arch {arch!r}")
+
+
+class PlayerDuelingNet(nn.Module):
+    """Dueling-DQN network sized for the player policy.
+
+    Separates the Q-value into a state-value V(s) and advantage A(s, a):
+        Q(s, a) = V(s) + (A(s, a) − mean_a A(s, a))
+    which is empirically more stable than estimating Q directly when
+    many actions are near-optimal (as is true early in PNH where most
+    moves just shuffle the player around a corridor).
+
+    Architecture:
+        scalar block (16) → Linear(16, 64) → ReLU → Linear(64, 64)
+        grid (11 × 15 × 15) → Conv(11→32) → Conv(32→64) → Conv(64→64)
+            → AdaptiveAvgPool(3) → Flatten(576) → Linear(576, 256)
+        concat(64 + 256) → value head  (2 × Linear(320, 128, 1))
+                         → adv head    (2 × Linear(320, 128, A))
+    ~280k params.  Big enough to matter on an NPU; small enough to
+    run in ~50 µs per step on CPU.
+    """
+
+    def __init__(self, in_dim: int, scalar_dim: int,
+                 out_dim: int = NUM_PLAYER_ACTIONS,
+                 conv_channels: tuple[int, int, int] = (32, 64, 64),
+                 scalar_hidden: int = 64,
+                 conv_hidden: int = 256,
+                 head_hidden: int = 128) -> None:
+        super().__init__()
+        assert in_dim == scalar_dim + PLAYER_GRID_DIM, (
+            f"PlayerDuelingNet expects {scalar_dim}+{PLAYER_GRID_DIM} dims, "
+            f"got {in_dim}"
+        )
+        self.scalar_dim = scalar_dim
+
+        self.scalar_mlp = nn.Sequential(
+            nn.Linear(scalar_dim, scalar_hidden),
+            nn.ReLU(),
+            nn.Linear(scalar_hidden, scalar_hidden),
+            nn.ReLU(),
+        )
+
+        c1, c2, c3 = conv_channels
+        self.conv = nn.Sequential(
+            nn.Conv2d(PLAYER_GRID_CHANNELS, c1, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(c1, c2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(c2, c3, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d(3),  # → (c3, 3, 3)
+        )
+        conv_flat = c3 * 3 * 3
+        self.conv_mlp = nn.Sequential(
+            nn.Linear(conv_flat, conv_hidden),
+            nn.ReLU(),
+        )
+
+        combined = scalar_hidden + conv_hidden
+        self.value_head = nn.Sequential(
+            nn.Linear(combined, head_hidden),
+            nn.ReLU(),
+            nn.Linear(head_hidden, 1),
+        )
+        self.advantage_head = nn.Sequential(
+            nn.Linear(combined, head_hidden),
+            nn.ReLU(),
+            nn.Linear(head_hidden, out_dim),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch = x.size(0)
+        scalar = x[:, :self.scalar_dim]
+        grid = x[:, self.scalar_dim:]
+        grid = grid.view(
+            batch, PLAYER_GRID_SIDE, PLAYER_GRID_SIDE, PLAYER_GRID_CHANNELS,
+        )
+        grid = grid.permute(0, 3, 1, 2).contiguous()
+
+        scalar_feat = self.scalar_mlp(scalar)
+        conv_feat = self.conv(grid).flatten(start_dim=1)
+        conv_feat = self.conv_mlp(conv_feat)
+        combined = torch.cat([scalar_feat, conv_feat], dim=1)
+
+        v = self.value_head(combined)                      # (B, 1)
+        a = self.advantage_head(combined)                  # (B, A)
+        a_centered = a - a.mean(dim=1, keepdim=True)
+        return v + a_centered
 
 
 def load_trajectories(paths: list[str],
@@ -208,17 +301,24 @@ def load_trajectories(paths: list[str],
     fill_pos: dict[str, int] = {sp: 0 for sp in capacity}
     seen_idx: dict[str, int] = {sp: 0 for sp in capacity}
     sample_cursor: dict[str, int] = {sp: 0 for sp in capacity}
+    # Mask width varies: monsters use NUM_ACTIONS (9), player uses
+    # NUM_PLAYER_ACTIONS (17).  Infer from the actual records seen.
+    mask_widths: dict[str, int] = {
+        sp: (NUM_PLAYER_ACTIONS if sp == "player" else NUM_ACTIONS)
+        for sp in capacity
+    }
     for sp in capacity:
         dim = expected_dims[sp]
         cap = capacity[sp]
+        mw = mask_widths[sp]
         per_species[sp] = {
             "s": np.empty((cap, dim), dtype=np.float32),
             "a": np.empty(cap, dtype=np.int64),
             "r": np.empty(cap, dtype=np.float32),
             "sp": np.empty((cap, dim), dtype=np.float32),
             "d": np.empty(cap, dtype=np.bool_),
-            "m": np.empty((cap, NUM_ACTIONS), dtype=np.bool_),
-            "mp": np.empty((cap, NUM_ACTIONS), dtype=np.bool_),
+            "m": np.empty((cap, mw), dtype=np.bool_),
+            "mp": np.empty((cap, mw), dtype=np.bool_),
         }
 
     for path in paths:
@@ -308,8 +408,11 @@ def train_species(species: str, data: dict[str, np.ndarray], *,
         f"mean={r_mean:.3f} |r|>clip={above_clip:.2%}"
     )
 
-    model = build_qnet(arch, feat_dim, scalar_dim, hidden).to(device)
-    target = build_qnet(arch, feat_dim, scalar_dim, hidden).to(device)
+    num_actions = NUM_PLAYER_ACTIONS if species == "player" else NUM_ACTIONS
+    model = build_qnet(arch, feat_dim, scalar_dim, hidden,
+                       out_dim=num_actions).to(device)
+    target = build_qnet(arch, feat_dim, scalar_dim, hidden,
+                        out_dim=num_actions).to(device)
     target.load_state_dict(model.state_dict())
     target.eval()
     param_count = sum(p.numel() for p in model.parameters())
@@ -386,26 +489,25 @@ def train_species(species: str, data: dict[str, np.ndarray], *,
     with torch.no_grad():
         sample = min(2048, n)
         q = model(s_all[:sample]).cpu().numpy()
-        mask = mp_all[:sample].cpu().numpy()
-        q_masked = np.where(mask, q, -1e9)
-        # Actually mask current-state legal actions instead — mp is
-        # next-state mask.  Use the recorded current mask.
         cur_mask = data["m"][:sample].astype(bool)
         q_masked = np.where(cur_mask, q, -1e9)
         chosen = q_masked.argmax(axis=1)
-        hist = np.bincount(chosen, minlength=NUM_ACTIONS)
-        from game.actions import Action
-        names = {
-            0: "WAIT",
-            1: "MOVE_N", 2: "MOVE_S", 3: "MOVE_E", 4: "MOVE_W",
-            5: "MOVE_NE", 6: "MOVE_NW", 7: "MOVE_SE", 8: "MOVE_SW",
-        }
+        hist = np.bincount(chosen, minlength=num_actions)
+        if species == "player":
+            from game.nn_features import PlayerAction
+            names = {int(pa): pa.name for pa in PlayerAction}
+        else:
+            names = {
+                0: "WAIT",
+                1: "MOVE_N", 2: "MOVE_S", 3: "MOVE_E", 4: "MOVE_W",
+                5: "MOVE_NE", 6: "MOVE_NW", 7: "MOVE_SE", 8: "MOVE_SW",
+            }
         print(
             f"[{species}] action distribution on {sample} sampled states:"
         )
-        for i in range(NUM_ACTIONS):
+        for i in range(num_actions):
             pct = 100.0 * hist[i] / max(1, hist.sum())
-            print(f"    {names[i]:<8} {hist[i]:>5} ({pct:4.1f}%)")
+            print(f"    {names.get(i, str(i)):<12} {hist[i]:>5} ({pct:4.1f}%)")
 
     # -- export to ONNX ----------------------------------------------------
     model.eval()
@@ -479,6 +581,10 @@ def main() -> None:
         if sp not in all_data:
             print(f"[warn] no data for species {sp!r}", flush=True)
             continue
+        # Force the dueling-CNN architecture for the player — its grid
+        # and action space differ from monsters'.  Monsters honour the
+        # user-selected arch.
+        sp_arch = "player" if sp == "player" else args.arch
         train_species(
             sp, all_data[sp],
             epochs=args.epochs,
@@ -489,7 +595,7 @@ def main() -> None:
             hidden=args.hidden,
             model_dir=args.model_dir,
             device=device,
-            arch=args.arch,
+            arch=sp_arch,
             double_dqn=args.double_dqn,
             reward_clip=args.reward_clip,
         )
