@@ -1,0 +1,13 @@
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--ignore=tests/boneyard",
+]
+markers = [
+    "slow: marks tests that take > 1s (deselect with '-m \"not slow\"')",
+    "nn: tests that exercise the neural-net brain path",
+]

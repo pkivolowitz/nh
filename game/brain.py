@@ -124,31 +124,89 @@ class BrainRegistry:
 
     Call ``init()`` at engine startup.  Call ``save_all()`` at shutdown
     to persist everything learned during the session.
+
+    Mode selection
+    --------------
+    ``mode`` can be ``"tabular"`` (default) or ``"nn"``.  In ``"nn"``
+    mode, ``get()`` returns a ``PolicyBrain`` backed by the species'
+    ONNX model if one exists on disk; absent a model, it transparently
+    falls back to the tabular brain so the game never stalls on a
+    missing file.  The mode can also be selected via the
+    ``PNH_BRAIN_MODE`` environment variable.
     """
 
     _brains: dict[str, Brain] = {}
     _brain_dir: str = ""
+    _mode: str = "tabular"
+    _model_dir: str = ""
 
     @classmethod
-    def init(cls, brain_dir: str = BRAIN_DIR) -> None:
-        """Set the persistence directory and create it if needed."""
+    def init(cls, brain_dir: str = BRAIN_DIR,
+             mode: Optional[str] = None,
+             model_dir: Optional[str] = None) -> None:
+        """Set persistence directories and the active brain mode.
+
+        ``mode`` precedence: explicit argument > PNH_BRAIN_MODE env var
+        > existing mode > default "tabular".
+        """
         cls._brain_dir = os.path.expanduser(brain_dir)
         os.makedirs(cls._brain_dir, exist_ok=True)
+        env_mode: str = os.environ.get("PNH_BRAIN_MODE", "").strip().lower()
+        resolved_mode: str = mode or env_mode or cls._mode or "tabular"
+        if resolved_mode not in ("tabular", "nn"):
+            raise ValueError(
+                f"unknown brain mode {resolved_mode!r} (expected 'tabular' or 'nn')"
+            )
+        cls._mode = resolved_mode
+        from_env = os.environ.get("PNH_MODEL_DIR", "~/.pnh/models")
+        cls._model_dir = os.path.expanduser(model_dir or from_env)
 
     @classmethod
     def get(cls, species_name: str, brain_class: type[Brain]) -> Brain:
-        """Get or load the brain for *species_name*."""
+        """Get or load the brain for *species_name*, honoring the current mode."""
         if species_name not in cls._brains:
-            path: str = os.path.join(cls._brain_dir, f"{species_name}.json")
-            cls._brains[species_name] = brain_class.load(path)
+            if cls._mode == "nn":
+                cls._brains[species_name] = cls._load_nn(
+                    species_name, brain_class,
+                )
+            else:
+                path: str = os.path.join(
+                    cls._brain_dir, f"{species_name}.json",
+                )
+                cls._brains[species_name] = brain_class.load(path)
         return cls._brains[species_name]
 
     @classmethod
+    def _load_nn(cls, species_name: str,
+                 tabular_class: type[Brain]) -> Brain:
+        """Load a PolicyBrain, falling back to tabular if no model exists."""
+        model_path: str = os.path.join(
+            cls._model_dir, f"{species_name}.onnx",
+        )
+        # Local import breaks the circular dependency with nn_brain.
+        from game.nn_brain import PolicyBrain
+        policy = PolicyBrain(species_name, model_path=model_path)
+        if policy.has_model:
+            return policy
+        # Fallback: ordinary tabular brain loaded from its JSON.
+        tab_path: str = os.path.join(cls._brain_dir, f"{species_name}.json")
+        return tabular_class.load(tab_path)
+
+    @classmethod
     def save_all(cls) -> None:
-        """Persist all loaded brains to disk."""
+        """Persist all loaded brains to disk.
+
+        PolicyBrains have no disk state of their own (models are trained
+        offline), so their save() is a no-op.  Tabular brains write their
+        Q-tables as before.
+        """
         for name, brain in cls._brains.items():
             path: str = os.path.join(cls._brain_dir, f"{name}.json")
             brain.save(path)
+
+    @classmethod
+    def mode(cls) -> str:
+        return cls._mode
 
 
 # ---------------------------------------------------------------------------

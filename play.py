@@ -43,6 +43,8 @@ def parse_args() -> argparse.Namespace:
                    help="AI plays the game (watch and learn)")
     p.add_argument("--ai-speed", type=int, default=100,
                    help="Milliseconds between AI actions (default 100)")
+    p.add_argument("--brain-mode", choices=["tabular", "nn"], default=None,
+                   help="Monster brain mode; overrides PNH_BRAIN_MODE env var")
     return p.parse_args()
 
 
@@ -119,6 +121,10 @@ def _monster_visible(engine: GameEngine) -> bool:
 def _main(stdscr: curses.window) -> None:
     """Curses main loop -- called inside ``curses.wrapper``."""
     args = parse_args()
+
+    # Configure monster brain mode before any engine construction so
+    # species pick up the right brain type on first spawn.
+    BrainRegistry.init(mode=args.brain_mode)
 
     # Load config.
     config = GameConfig()

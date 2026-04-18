@@ -44,12 +44,26 @@ def _format_brain_stats(player_brain) -> str:
 
 
 def train(total_turns: int, per_game_cap: int,
-          save_every: int, seed: int) -> None:
-    """Run training games until *total_turns* player actions have elapsed."""
+          save_every: int, seed: int,
+          record_to: str = "") -> None:
+    """Run training games until *total_turns* player actions have elapsed.
+
+    If *record_to* is non-empty, monster brains are wrapped in recording
+    brains that append training tuples to that JSONL file.  The inner
+    tabular Q-tables still learn normally — the wrapper is transparent.
+    """
     from game.ai_player import AIPlayer, PlayerBrain, AI_BRAIN_PATH
 
     BrainRegistry.init()
     player_brain = PlayerBrain.load(AI_BRAIN_PATH)
+
+    trajectory_logger = None
+    if record_to:
+        from game.nn_brain import TrajectoryLogger, install_recording_brains
+        trajectory_logger = TrajectoryLogger(record_to)
+        install_recording_brains(trajectory_logger)
+        print(f"[train] logging trajectories to {trajectory_logger.path}",
+              flush=True)
 
     turns_done: int = 0
     games_done: int = 0
@@ -102,6 +116,10 @@ def train(total_turns: int, per_game_cap: int,
     # Final save.
     BrainRegistry.save_all()
     player_brain.save(AI_BRAIN_PATH)
+    if trajectory_logger is not None:
+        trajectory_logger.close()
+        print(f"[train] logged {trajectory_logger.count} trajectory records",
+              flush=True)
     elapsed = time.time() - start
     print(
         f"\nDone. {turns_done} turns in {elapsed:.1f}s "
@@ -122,8 +140,11 @@ def main() -> None:
                    help="Save brains every N turns (default 10000)")
     p.add_argument("--seed", type=int, default=1,
                    help="Starting RNG seed; incremented per game")
+    p.add_argument("--record-to", type=str, default="",
+                   help="Path to JSONL trajectory log (omit to disable)")
     args = p.parse_args()
-    train(args.turns, args.per_game_cap, args.save_every, args.seed)
+    train(args.turns, args.per_game_cap, args.save_every, args.seed,
+          record_to=args.record_to)
 
 
 if __name__ == "__main__":
