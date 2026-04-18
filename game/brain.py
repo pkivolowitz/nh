@@ -73,10 +73,14 @@ REWARD_RAT_APPROACH_PREY: float = -0.10  # Got closer to player — bad for a ra
 REWARD_RAT_FOOD_CLOSER: float = 0.20    # Moved toward food — strong positive
 REWARD_RAT_ON_FOOD: float = 0.50    # Reached food cell — jackpot
 
-# Player-specific reward shaping.  The engine awards these to the player
-# alongside the implicit combat and pickup rewards.
-REWARD_DESCEND_STAIRS: float = 5.0   # Strong signal: progress matters.
-REWARD_ASCEND_STAIRS: float = 0.0    # Retreat is neither good nor bad.
+# Player-specific reward shaping.  The game's real rewards are goodies:
+# combat hits/kills, items picked up, food eaten.  Stairs descent is a
+# strategic choice, not an objective — rewarding it teaches compulsive
+# descent rather than tactical play.  So stairs are neutral; only
+# death and per-turn pressure carry extra signal beyond the natural
+# item / combat rewards.
+REWARD_DESCEND_STAIRS: float = 0.0
+REWARD_ASCEND_STAIRS: float = 0.0
 REWARD_PER_TURN_ALIVE: float = -0.01 # Tiny pressure to not stall.
 
 # Exploration rate bounds.  Starts high (try everything), decays toward
